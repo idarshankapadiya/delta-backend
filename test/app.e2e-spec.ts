@@ -20,6 +20,24 @@ describe('AppController (e2e)', () => {
     return request(app.getHttpServer())
       .get('/')
       .expect(200)
-      .expect('Hello World!');
+      .expect(({ body }) => {
+        expect(body.base_path).toBe('/api');
+        expect(body.endpoints).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              method: 'GET',
+              path: '/api',
+            }),
+            expect.objectContaining({
+              method: 'POST',
+              path: '/api/catalog/access/request-otp',
+            }),
+            expect.objectContaining({
+              method: 'PUT',
+              path: '/api/catalog/documents/:document_id',
+            }),
+          ]),
+        );
+      });
   });
 });

@@ -1,0 +1,1059 @@
+{
+  "info": {
+    "name": "Delta Backend Catalog GCS Flow",
+    "description": "Postman collection for the current slug-based catalog API. PDFs stay private behind signed URLs; thumbnails are public URLs from darshanent-thumbnail-dir returned in catalog JSON. POST /api/catalog/access is inquiry-only; Google access, OTP verification, and the temporary master OTP shortcut are the cookie-granting flows. Do not put GOOGLE_APPLICATION_CREDENTIALS or service account JSON content in Postman. Do not use legacy document-id payloads for PDF signing.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "frontend_origin",
+      "value": "http://localhost:5173"
+    },
+    {
+      "key": "google_id_token",
+      "value": "replace-with-google-id-token"
+    },
+    {
+      "key": "otp_code",
+      "value": "190399"
+    },
+    {
+      "key": "otp_challenge_id",
+      "value": ""
+    },
+    {
+      "key": "blocked_origin",
+      "value": "https://blocked.example.com"
+    },
+    {
+      "key": "catalog_admin_token",
+      "value": "replace-with-CATALOG_ADMIN_TOKEN"
+    },
+    {
+      "key": "company_slug",
+      "value": "schneider"
+    },
+    {
+      "key": "category_slug",
+      "value": "industrial-automation"
+    },
+    {
+      "key": "document_slug",
+      "value": "plc-catalog"
+    },
+    {
+      "key": "display_name",
+      "value": "PLC Catalog"
+    },
+    {
+      "key": "catalog_pdf_path",
+      "value": "/absolute/path/to/catalog.pdf"
+    },
+    {
+      "key": "public_thumbnail_base_url",
+      "value": "https://storage.googleapis.com/darshanent-thumbnail-dir"
+    },
+    {
+      "key": "document_id",
+      "value": ""
+    },
+    {
+      "key": "previous_document_id",
+      "value": ""
+    },
+    {
+      "key": "thumbnail_url",
+      "value": ""
+    },
+    {
+      "key": "signed_url",
+      "value": ""
+    },
+    {
+      "key": "access_expires_at",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Smoke Checks",
+      "item": [
+        {
+          "name": "Health Check",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('health returns 200', function () {",
+                  "  pm.expect([200]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/health"
+          }
+        },
+        {
+          "name": "Root",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('root returns 200', function () {",
+                  "  pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test('root lists available endpoints', function () {",
+                  "  pm.expect(json.base_path).to.eql('/api');",
+                  "  pm.expect(json.endpoints).to.be.an('array');",
+                  "  pm.expect(json.endpoints.length).to.be.greaterThan(0);",
+                  "});",
+                  "",
+                  "pm.test('root includes current catalog endpoints', function () {",
+                  "  const endpointKeys = json.endpoints.map(function (endpoint) {",
+                  "    return endpoint.method + ' ' + endpoint.path;",
+                  "  });",
+                  "",
+                  "  pm.expect(endpointKeys).to.include('GET /api/health');",
+                  "  pm.expect(endpointKeys).to.include('GET /api/catalog/all');",
+                  "  pm.expect(endpointKeys).to.include('POST /api/catalog/access/request-otp');",
+                  "  pm.expect(endpointKeys).to.include('POST /api/catalog/documents/access');",
+                  "  pm.expect(endpointKeys).to.include('POST /api/catalog/documents');",
+                  "  pm.expect(endpointKeys).to.include('PUT /api/catalog/documents/:document_id');",
+                  "  pm.expect(endpointKeys).to.include('DELETE /api/catalog/documents/:document_id');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Catalog Public Metadata",
+      "item": [
+        {
+          "name": "Get Full Catalog Navigation",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('catalog navigation returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('navigation has companies array', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.companies).to.be.an('array');",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "const publicThumbnailBaseUrl = pm.collectionVariables.get('public_thumbnail_base_url');",
+                  "function getCompanyDocuments(company) {",
+                  "  const categoryDocuments = (company.categories || []).flatMap(function (category) {",
+                  "    return category.documents || [];",
+                  "  });",
+                  "  return categoryDocuments.concat(company.documents || []);",
+                  "}",
+                  "",
+                  "pm.test('thumbnail URLs use the public thumbnail bucket', function () {",
+                  "  const thumbnailUrls = (json.companies || []).flatMap(function (company) {",
+                  "    const documentThumbnailUrls = getCompanyDocuments(company)",
+                  "      .map(function (document) { return document.thumbnail_url; })",
+                  "      .filter(Boolean);",
+                  "    return documentThumbnailUrls;",
+                  "  });",
+                  "",
+                  "  thumbnailUrls.forEach(function (url) {",
+                  "    pm.expect(url).to.include(publicThumbnailBaseUrl);",
+                  "    pm.expect(url).to.not.include('X-Goog-Signature');",
+                  "  });",
+                  "});",
+                  "",
+                  "pm.test('companies do not expose company-level thumbnail URLs', function () {",
+                  "  (json.companies || []).forEach(function (company) {",
+                  "    pm.expect(company).to.not.have.property('thumbnail_url');",
+                  "  });",
+                  "});",
+                  "",
+                  "const firstCompany = json.companies && json.companies[0];",
+                  "if (firstCompany) {",
+                  "  pm.collectionVariables.set('company_slug', firstCompany.company_slug);",
+                  "  const firstCategory = firstCompany.categories && firstCompany.categories[0];",
+                  "  const firstDocument = (firstCategory && firstCategory.documents && firstCategory.documents[0]) || (firstCompany.documents && firstCompany.documents[0]);",
+                  "  if (firstCategory) pm.collectionVariables.set('category_slug', firstCategory.category_slug);",
+                  "  if (firstDocument) {",
+                  "    pm.collectionVariables.set('document_slug', firstDocument.document_slug);",
+                  "    pm.collectionVariables.set('document_id', firstDocument.document_id);",
+                  "    if (firstDocument.thumbnail_url) pm.collectionVariables.set('thumbnail_url', firstDocument.thumbnail_url);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/catalog/all"
+          }
+        },
+        {
+          "name": "Get Selected Company Library",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('catalog library returns 200', function () {",
+                  "  pm.expect([200, 201]).to.include(pm.response.code);",
+                  "});",
+                  "",
+                  "pm.test('library has companies array', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.companies).to.be.an('array');",
+                  "});",
+                  "",
+                  "pm.test('library thumbnail URLs use the public thumbnail bucket', function () {",
+                  "  const json = pm.response.json();",
+                  "  const publicThumbnailBaseUrl = pm.collectionVariables.get('public_thumbnail_base_url');",
+                  "  const thumbnailUrls = (json.companies || []).flatMap(function (company) {",
+                  "    const exampleThumbnailUrls = (company.examples || [])",
+                  "      .map(function (document) { return document.thumbnail_url; })",
+                  "      .filter(Boolean);",
+                  "    return exampleThumbnailUrls;",
+                  "  });",
+                  "",
+                  "  thumbnailUrls.forEach(function (url) {",
+                  "    pm.expect(url).to.include(publicThumbnailBaseUrl);",
+                  "    pm.expect(url).to.not.include('X-Goog-Signature');",
+                  "  });",
+                  "});",
+                  "",
+                  "pm.test('library companies do not expose company-level thumbnail URLs', function () {",
+                  "  const json = pm.response.json();",
+                  "  (json.companies || []).forEach(function (company) {",
+                  "    pm.expect(company).to.not.have.property('thumbnail_url');",
+                  "  });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"company_slugs\": [\"{{company_slug}}\"]\n}"
+            },
+            "url": "{{base_url}}/api/catalog/library"
+          }
+        },
+        {
+          "name": "Open Latest Thumbnail URL",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('thumbnail can be opened', function () {",
+                  "  pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "",
+                  "pm.test('thumbnail URL is public and unsigned', function () {",
+                  "  const thumbnailUrl = pm.collectionVariables.get('thumbnail_url');",
+                  "  pm.expect(thumbnailUrl).to.include(pm.collectionVariables.get('public_thumbnail_base_url'));",
+                  "  pm.expect(thumbnailUrl).to.not.include('X-Goog-Signature');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{thumbnail_url}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Catalog Access And PDF Signing",
+      "item": [
+        {
+          "name": "Record Catalog Inquiry - Postman No Origin",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.cookies.jar().unset(pm.collectionVariables.get('base_url'), 'catalog_access');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('inquiry request succeeds', function () {",
+                  "  pm.expect([200, 201]).to.include(pm.response.code);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test('response is inquiry-only', function () {",
+                  "  pm.expect(json.ok).to.eql(true);",
+                  "  pm.expect(json.inquiry_only).to.eql(true);",
+                  "});",
+                  "",
+                  "pm.test('inquiry endpoint does not set access cookie', function () {",
+                  "  pm.expect(pm.response.headers.get('Set-Cookie') || '').to.not.include('catalog_access=');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test User\",\n  \"mobile\": \"9999999999\",\n  \"email\": \"test@example.com\",\n  \"message\": \"Testing catalog access from Postman\"\n}"
+            },
+            "url": "{{base_url}}/api/catalog/access"
+          }
+        },
+        {
+          "name": "Record Catalog Inquiry - Allowed Frontend Origin",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('allowed origin inquiry request succeeds', function () {",
+                  "  pm.expect([200,201]).to.include(pm.response.code);",
+                  "});",
+                  "",
+                  "pm.test('allowed origin inquiry is still inquiry-only', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.ok).to.eql(true);",
+                  "  pm.expect(json.inquiry_only).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Origin",
+                "value": "{{frontend_origin}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Frontend Test User\",\n  \"mobile\": \"9999999999\",\n  \"email\": \"frontend-test@example.com\",\n  \"message\": \"Testing allowed frontend origin\"\n}"
+            },
+            "url": "{{base_url}}/api/catalog/access"
+          }
+        },
+        {
+          "name": "Create Access Cookie - Google ID Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const configuredToken = pm.collectionVariables.get('google_id_token');",
+                  "const tokenProvided = configuredToken && !configuredToken.startsWith('replace-with-');",
+                  "",
+                  "pm.test('Google access returns an expected status', function () {",
+                  "  if (tokenProvided) {",
+                  "    pm.expect([200, 201]).to.include(pm.response.code);",
+                  "  } else {",
+                  "    pm.expect([401, 503]).to.include(pm.response.code);",
+                  "  }",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "  const json = pm.response.json();",
+                  "  pm.collectionVariables.set('access_expires_at', json.expires_at);",
+                  "",
+                  "  pm.test('Google access sets catalog_access cookie', function () {",
+                  "    pm.expect(json.ok).to.eql(true);",
+                  "    pm.expect(json.auth_provider).to.eql('google');",
+                  "    pm.expect(pm.cookies.get('catalog_access')).to.be.ok;",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id_token\": \"{{google_id_token}}\"\n}"
+            },
+            "url": "{{base_url}}/api/catalog/access/google"
+          }
+        },
+        {
+          "name": "Request WhatsApp OTP Challenge",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('OTP challenge request succeeds', function () {",
+                  "  pm.expect([200, 201]).to.include(pm.response.code);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set('otp_challenge_id', json.challenge_id);",
+                  "",
+                  "pm.test('OTP challenge response has expected fields', function () {",
+                  "  pm.expect(json.ok).to.eql(true);",
+                  "  pm.expect(json.challenge_id).to.be.a('string');",
+                  "  pm.expect(json.channel).to.eql('whatsapp');",
+                  "  pm.expect(json.expires_at).to.be.a('string');",
+                  "  pm.expect(json.resend_after_seconds).to.be.a('number');",
+                  "  pm.expect(pm.response.headers.get('Set-Cookie') || '').to.not.include('catalog_access=');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"OTP Test User\",\n  \"mobile\": \"9999999999\",\n  \"email\": \"otp-test@example.com\",\n  \"message\": \"Testing WhatsApp OTP challenge from Postman\",\n  \"channel\": \"whatsapp\"\n}"
+            },
+            "url": "{{base_url}}/api/catalog/access/request-otp"
+          }
+        },
+        {
+          "name": "Verify WhatsApp OTP Challenge",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('OTP verification succeeds', function () {",
+                  "  pm.expect([200, 201]).to.include(pm.response.code);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set('access_expires_at', json.expires_at);",
+                  "",
+                  "pm.test('OTP verification sets catalog_access cookie', function () {",
+                  "  pm.expect(json.ok).to.eql(true);",
+                  "  pm.expect(json.expires_at).to.be.a('string');",
+                  "  pm.expect(pm.cookies.get('catalog_access')).to.be.ok;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"challenge_id\": \"{{otp_challenge_id}}\",\n  \"mobile\": \"9999999999\",\n  \"otp\": \"{{otp_code}}\"\n}"
+            },
+            "url": "{{base_url}}/api/catalog/access/verify-otp"
+          }
+        },
+        {
+          "name": "Create Access Cookie - WhatsApp Master OTP Shortcut",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('master OTP shortcut succeeds', function () {",
+                  "  pm.expect([200, 201]).to.include(pm.response.code);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set('access_expires_at', json.expires_at);",
+                  "",
+                  "pm.test('master OTP shortcut sets catalog_access cookie', function () {",
+                  "  pm.expect(json.ok).to.eql(true);",
+                  "  pm.expect(json.auth_provider).to.eql('whatsapp_otp');",
+                  "  pm.expect(json.expires_at).to.be.a('string');",
+                  "  pm.expect(pm.cookies.get('catalog_access')).to.be.ok;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Shortcut Test User\",\n  \"mobile\": \"9999999999\",\n  \"email\": \"shortcut-test@example.com\",\n  \"message\": \"Testing master OTP shortcut from Postman\",\n  \"channel\": \"whatsapp\",\n  \"otp\": \"{{otp_code}}\"\n}"
+            },
+            "url": "{{base_url}}/api/catalog/access/request-otp"
+          }
+        },
+        {
+          "name": "Legacy Document ID Signing Payload Should Fail",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('document_id signing payload is rejected', function () {",
+                  "  pm.expect([400]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"document_id\": \"{{document_id}}\",\n  \"action\": \"preview\"\n}"
+            },
+            "url": "{{base_url}}/api/catalog/documents/access"
+          }
+        },
+        {
+          "name": "Create Preview Signed URL By Slugs",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('signed URL request succeeds', function () {",
+                  "  pm.expect([200, 201]).to.include(pm.response.code);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set('signed_url', json.url);",
+                  "pm.collectionVariables.set('document_id', json.document_id);",
+                  "",
+                  "pm.test('signed URL payload looks valid', function () {",
+                  "  pm.expect(json.document_id).to.be.a('string');",
+                  "  pm.expect(json.url).to.be.a('string').and.include('storage.googleapis.com');",
+                  "  pm.expect(json.ttl_seconds).to.be.a('number');",
+                  "  pm.expect(json.file_name).to.be.a('string');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"company_slug\": \"{{company_slug}}\",\n  \"category_slug\": \"{{category_slug}}\",\n  \"document_slug\": \"{{document_slug}}\",\n  \"action\": \"preview\"\n}"
+            },
+            "url": "{{base_url}}/api/catalog/documents/access"
+          }
+        },
+        {
+          "name": "Create Download Signed URL By Slugs",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('download signed URL request succeeds', function () {",
+                  "  pm.expect([200, 201]).to.include(pm.response.code);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set('signed_url', json.url);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"company_slug\": \"{{company_slug}}\",\n  \"category_slug\": \"{{category_slug}}\",\n  \"document_slug\": \"{{document_slug}}\",\n  \"action\": \"download\"\n}"
+            },
+            "url": "{{base_url}}/api/catalog/documents/access"
+          }
+        },
+        {
+          "name": "Open Latest Signed URL",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('signed URL can be opened', function () {",
+                  "  pm.expect([200]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{signed_url}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin Upload Flow",
+      "item": [
+        {
+          "name": "Create Catalog Document",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('create document succeeds', function () {",
+                  "  pm.expect([200, 201]).to.include(pm.response.code);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set('document_id', json.document_id);",
+                  "if (json.thumbnail_url) pm.collectionVariables.set('thumbnail_url', json.thumbnail_url);",
+                  "",
+                  "pm.test('create response uses uploaded PDF filename and public document thumbnail bucket', function () {",
+                  "  pm.expect(json.document_id).to.be.a('string');",
+                  "  pm.expect(json.object_name).to.include(pm.collectionVariables.get('company_slug') + '/');",
+                  "  pm.expect(json.object_name).to.not.include('/current.pdf');",
+                  "  pm.expect(json.file_name).to.be.a('string').and.match(/\\.pdf$/i);",
+                  "  pm.expect(json.file_name).to.not.eql('current.pdf');",
+                  "  pm.expect(json.thumbnail_url).to.include(pm.collectionVariables.get('public_thumbnail_base_url'));",
+                  "  pm.expect(json.thumbnail_url).to.not.include('X-Goog-Signature');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-catalog-admin-token",
+                "value": "{{catalog_admin_token}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "company_slug",
+                  "value": "{{company_slug}}",
+                  "type": "text"
+                },
+                {
+                  "key": "category_slug",
+                  "value": "{{category_slug}}",
+                  "type": "text"
+                },
+                {
+                  "key": "document_slug",
+                  "value": "{{document_slug}}",
+                  "type": "text"
+                },
+                {
+                  "key": "display_name",
+                  "value": "{{display_name}}",
+                  "type": "text"
+                },
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "{{catalog_pdf_path}}"
+                }
+              ]
+            },
+            "url": "{{base_url}}/api/catalog/documents"
+          }
+        },
+        {
+          "name": "Update Catalog Document Metadata Only",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('metadata update succeeds', function () {",
+                  "  pm.expect([200,201]).to.include(pm.response.code);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test('metadata-only update keeps the same document_id', function () {",
+                  "  pm.expect(json.document_id).to.eql(pm.collectionVariables.get('document_id'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "x-catalog-admin-token",
+                "value": "{{catalog_admin_token}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "category_slug",
+                  "value": "{{category_slug}}",
+                  "type": "text"
+                },
+                {
+                  "key": "display_name",
+                  "value": "{{display_name}} Updated",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": "{{base_url}}/api/catalog/documents/{{document_id}}"
+          }
+        },
+        {
+          "name": "Replace Catalog Document PDF",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('previous_document_id', pm.collectionVariables.get('document_id'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('PDF replacement succeeds', function () {",
+                  "  pm.expect([200, 201]).to.include(pm.response.code);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set('document_id', json.document_id);",
+                  "if (json.thumbnail_url) pm.collectionVariables.set('thumbnail_url', json.thumbnail_url);",
+                  "",
+                  "pm.test('replacement returns new document id and uploaded PDF filename', function () {",
+                  "  pm.expect(json.document_id).to.be.a('string');",
+                  "  pm.expect(json.document_id).to.not.eql(pm.collectionVariables.get('previous_document_id'));",
+                  "  pm.expect(json.object_name).to.not.include('/current.pdf');",
+                  "  pm.expect(json.file_name).to.be.a('string').and.match(/\\.pdf$/i);",
+                  "  pm.expect(json.file_name).to.not.eql('current.pdf');",
+                  "  pm.expect(json.thumbnail_url).to.include(pm.collectionVariables.get('public_thumbnail_base_url'));",
+                  "  pm.expect(json.thumbnail_url).to.not.include('X-Goog-Signature');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "x-catalog-admin-token",
+                "value": "{{catalog_admin_token}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "display_name",
+                  "value": "{{display_name}}",
+                  "type": "text"
+                },
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "{{catalog_pdf_path}}"
+                }
+              ]
+            },
+            "url": "{{base_url}}/api/catalog/documents/{{document_id}}"
+          }
+        },
+        {
+          "name": "Delete Catalog Document",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('delete document succeeds', function () {",
+                  "  pm.expect([200,201]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "x-catalog-admin-token",
+                "value": "{{catalog_admin_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/catalog/documents/{{document_id}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Negative Checks",
+      "item": [
+        {
+          "name": "Document Access Without Cookie Should Fail",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.cookies.jar().unset(pm.collectionVariables.get('base_url'), 'catalog_access');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('missing cookie is rejected', function () {",
+                  "  pm.expect([401]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"company_slug\": \"{{company_slug}}\",\n  \"category_slug\": \"{{category_slug}}\",\n  \"document_slug\": \"{{document_slug}}\",\n  \"action\": \"preview\"\n}"
+            },
+            "url": "{{base_url}}/api/catalog/documents/access"
+          }
+        },
+        {
+          "name": "Catalog Inquiry From Blocked Browser Origin Should Fail",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('blocked origin is rejected', function () {",
+                  "  pm.expect([403]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Origin",
+                "value": "{{blocked_origin}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Blocked User\",\n  \"mobile\": \"9999999999\",\n  \"email\": \"blocked@example.com\",\n  \"message\": \"This should be blocked by origin guard or CORS\"\n}"
+            },
+            "url": "{{base_url}}/api/catalog/access"
+          }
+        },
+        {
+          "name": "Invalid Slugs Should Fail",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('invalid slugs are rejected or auth is required first', function () {",
+                  "  pm.expect([401, 404]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"company_slug\": \"not-a-real-company\",\n  \"document_slug\": \"not-a-real-document\",\n  \"action\": \"preview\"\n}"
+            },
+            "url": "{{base_url}}/api/catalog/documents/access"
+          }
+        },
+        {
+          "name": "Admin Upload Without Token Should Fail",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('missing admin token is rejected', function () {",
+                  "  pm.expect([401]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "company_slug",
+                  "value": "{{company_slug}}",
+                  "type": "text"
+                },
+                {
+                  "key": "document_slug",
+                  "value": "{{document_slug}}",
+                  "type": "text"
+                },
+                {
+                  "key": "display_name",
+                  "value": "{{display_name}}",
+                  "type": "text"
+                },
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "{{catalog_pdf_path}}"
+                }
+              ]
+            },
+            "url": "{{base_url}}/api/catalog/documents"
+          }
+        }
+      ]
+    }
+  ]
+}
