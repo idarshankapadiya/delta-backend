@@ -82,6 +82,49 @@ describe('CatalogController', () => {
     );
   });
 
+  it('sets the access cookie and redirects home for Google redirect sign-in', async () => {
+    jest.spyOn(catalogAccessService, 'createGoogleAccess').mockResolvedValue({
+      token: 'google-redirect-session-token',
+      expiresAt: new Date('2026-07-19T00:00:00.000Z'),
+      authProvider: 'google',
+      email: 'customer@example.com',
+      name: 'Customer',
+    });
+    const reply = createReply();
+
+    await controller.createGoogleRedirectAccess(
+      {
+        credential: 'google-id-token',
+        g_csrf_token: 'csrf-token',
+      },
+      createRequest('g_csrf_token=csrf-token'),
+      reply as unknown as FastifyReply,
+    );
+
+    expect(reply.header.mock.calls[0]?.[1]).toContain(
+      'catalog_access=google-redirect-session-token',
+    );
+    expect(reply.code).toHaveBeenCalledWith(303);
+    expect(reply.redirect).toHaveBeenCalledWith('http://localhost:5173/');
+  });
+
+  it('rejects Google redirect sign-in when the CSRF token is invalid', async () => {
+    const reply = createReply();
+
+    await expect(
+      controller.createGoogleRedirectAccess(
+        {
+          credential: 'google-id-token',
+          g_csrf_token: 'body-csrf-token',
+        },
+        createRequest('g_csrf_token=cookie-csrf-token'),
+        reply as unknown as FastifyReply,
+      ),
+    ).rejects.toThrow('Invalid Google sign-in CSRF token');
+    expect(reply.header).not.toHaveBeenCalled();
+    expect(reply.redirect).not.toHaveBeenCalled();
+  });
+
   it('rejects wrong WhatsApp OTP verification without setting the access cookie', async () => {
     const otpRequest = await controller.requestAccessOtp(
       { name: 'Customer', mobile: '9999999999', channel: 'whatsapp' },
@@ -156,7 +199,47 @@ describe('CatalogController', () => {
     expect(reply.header.mock.calls[0]?.[1]).toContain('catalog_access=');
   });
 
-  it('rejects signed URL access without the access cookie', async () => {
+  it('returns the current access session for a valid access cookie', async () => {
+    const reply = createReply();
+
+    await controller.requestAccessOtp(
+      {
+        name: 'Customer',
+        mobile: '9999999999',
+        channel: 'whatsapp',
+        otp: '190399',
+      },
+      createRequest(),
+      reply as unknown as FastifyReply,
+    );
+
+    const cookie = reply.header.mock.calls[0]?.[1] ?? '';
+
+    expect(controller.getAccessMe(createRequest(cookie))).toMatchObject({
+      ok: true,
+      auth_provider: 'whatsapp_otp',
+      mobile: '9999999999',
+      name: 'Customer',
+      expires_at: expect.any(String),
+    });
+  });
+
+  it('rejects current access session lookup without the access cookie', () => {
+    expect(() => controller.getAccessMe(createRequest())).toThrow(
+      'Catalog access is required',
+    );
+  });
+
+  it('returns signed URL details without the access cookie', async () => {
+    catalogService.documentSelectionExists.mockResolvedValue(true);
+    catalogService.createSignedUrlForSelection.mockResolvedValue({
+      document_id: '01JABCDEF00000000000000000',
+      url: 'https://storage.googleapis.com/signed',
+      expires_at: '2026-06-16T18:30:00.000Z',
+      ttl_seconds: 900,
+      file_name: 'PMS_Metering.pdf',
+    });
+
     await expect(
       controller.createDocumentAccess(
         {
@@ -166,8 +249,9 @@ describe('CatalogController', () => {
         },
         createRequest(),
       ),
-    ).rejects.toMatchObject({
-      status: 401,
+    ).resolves.toMatchObject({
+      document_id: '01JABCDEF00000000000000000',
+      url: 'https://storage.googleapis.com/signed',
     });
   });
 
@@ -227,10 +311,22 @@ describe('CatalogController', () => {
   }
 
   function createReply(): {
+    code: jest.MockedFunction<(statusCode: number) => unknown>;
     header: jest.MockedFunction<(name: string, value: string) => void>;
+    redirect: jest.MockedFunction<(url: string) => void>;
   } {
-    return {
+    const reply = {
+      code: jest.fn(),
       header: jest.fn(),
+      redirect: jest.fn(),
+    };
+
+    reply.code.mockReturnValue(reply);
+
+    return {
+      code: reply.code,
+      header: reply.header,
+      redirect: reply.redirect,
     };
   }
 

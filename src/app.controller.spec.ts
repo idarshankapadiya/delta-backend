@@ -27,7 +27,23 @@ describe('AppController', () => {
           }),
           expect.objectContaining({
             method: 'POST',
+            path: '/api/message',
+          }),
+          expect.objectContaining({
+            method: 'GET',
+            path: '/api/message',
+          }),
+          expect.objectContaining({
+            method: 'POST',
             path: '/api/catalog/documents/access',
+          }),
+          expect.objectContaining({
+            method: 'GET',
+            path: '/api/catalog/access/me',
+          }),
+          expect.objectContaining({
+            method: 'POST',
+            path: '/api/catalog/access/google/redirect',
           }),
           expect.objectContaining({
             method: 'DELETE',

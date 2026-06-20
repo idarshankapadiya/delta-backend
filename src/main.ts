@@ -4,7 +4,7 @@ import {
   FastifyAdapter,
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import {
   getAllowedFrontendOrigins,
@@ -14,6 +14,7 @@ import {
 import { getCatalogUploadMaxBytes } from './config/catalog.config';
 
 async function bootstrap() {
+  const logger = new Logger('Bootstrap');
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
     new FastifyAdapter(),
@@ -50,6 +51,13 @@ async function bootstrap() {
   );
 
   app.setGlobalPrefix('api');
-  await app.listen(getHttpPort(), getHttpHost());
+  const port = getHttpPort();
+  const host = getHttpHost();
+  await app.listen(port, host);
+  logger.log(`Backend listening on http://${host}:${port}/api`);
+
+  if (host === '0.0.0.0') {
+    logger.log(`Local backend URL: http://localhost:${port}/api`);
+  }
 }
 void bootstrap();

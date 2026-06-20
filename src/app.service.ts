@@ -33,6 +33,18 @@ export class AppService {
           auth: 'none',
         },
         {
+          method: 'POST',
+          path: '/api/message',
+          description: 'Create a contact form message in Firestore.',
+          auth: 'allowed browser origin for browser requests',
+        },
+        {
+          method: 'GET',
+          path: '/api/message',
+          description: 'Return contact form messages newest first.',
+          auth: 'x-backend-admin-token',
+        },
+        {
           method: 'GET',
           path: '/api/catalog/all',
           description: 'Return full public catalog navigation and metadata.',
@@ -59,6 +71,20 @@ export class AppService {
         },
         {
           method: 'POST',
+          path: '/api/catalog/access/google/redirect',
+          description:
+            'Handle Google redirect sign-in, set the catalog_access cookie, and redirect home.',
+          auth: 'Google Identity Services credential form post',
+        },
+        {
+          method: 'GET',
+          path: '/api/catalog/access/me',
+          description:
+            'Return the current catalog access session for a valid catalog_access cookie.',
+          auth: 'catalog_access HttpOnly cookie',
+        },
+        {
+          method: 'POST',
           path: '/api/catalog/access/request-otp',
           description:
             'Create an OTP challenge or grant temporary master OTP access.',
@@ -75,26 +101,26 @@ export class AppService {
           path: '/api/catalog/documents/access',
           description:
             'Create a short-lived signed PDF URL for preview or download.',
-          auth: 'catalog_access HttpOnly cookie',
+          auth: 'allowed browser origin for browser requests',
         },
         {
           method: 'POST',
           path: '/api/catalog/documents',
           description: 'Create a catalog document PDF and thumbnail.',
-          auth: 'x-catalog-admin-token',
+          auth: 'x-backend-admin-token',
         },
         {
           method: 'PUT',
           path: '/api/catalog/documents/:document_id',
           description:
             'Update catalog document metadata or replace the current PDF.',
-          auth: 'x-catalog-admin-token',
+          auth: 'x-backend-admin-token',
         },
         {
           method: 'DELETE',
           path: '/api/catalog/documents/:document_id',
           description: 'Delete a catalog document and public thumbnail.',
-          auth: 'x-catalog-admin-token',
+          auth: 'x-backend-admin-token',
         },
       ],
     };

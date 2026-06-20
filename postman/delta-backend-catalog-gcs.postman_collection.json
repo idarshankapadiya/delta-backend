@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Delta Backend Catalog GCS Flow",
-    "description": "Postman collection for the current slug-based catalog API. PDFs stay private behind signed URLs; thumbnails are public URLs from darshanent-thumbnail-dir returned in catalog JSON. POST /api/catalog/access is inquiry-only; Google access, OTP verification, and the temporary master OTP shortcut are the cookie-granting flows. Do not put GOOGLE_APPLICATION_CREDENTIALS or service account JSON content in Postman. Do not use legacy document-id payloads for PDF signing.",
+    "description": "Postman collection for the current slug-based catalog API. PDFs stay private behind signed URLs; thumbnails are public URLs from darshanent-thumbnail-dir returned in catalog JSON. POST /api/catalog/access is inquiry-only; Google access, OTP verification, and the temporary master OTP shortcut are the cookie-granting flows. GET /api/catalog/access/me restores the current catalog_access session for frontend header state. Do not put GOOGLE_APPLICATION_CREDENTIALS or service account JSON content in Postman. Do not use legacy document-id payloads for PDF signing. Contact messages use POST /api/message for public writes and GET /api/message with x-backend-admin-token for admin reads.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -30,8 +30,8 @@
       "value": "https://blocked.example.com"
     },
     {
-      "key": "catalog_admin_token",
-      "value": "replace-with-CATALOG_ADMIN_TOKEN"
+      "key": "BACKEND_ADMIN_TOKEN",
+      "value": "replace-with-BACKEND_ADMIN_TOKEN"
     },
     {
       "key": "company_slug",
@@ -128,7 +128,10 @@
                   "  });",
                   "",
                   "  pm.expect(endpointKeys).to.include('GET /api/health');",
+                  "  pm.expect(endpointKeys).to.include('POST /api/message');",
+                  "  pm.expect(endpointKeys).to.include('GET /api/message');",
                   "  pm.expect(endpointKeys).to.include('GET /api/catalog/all');",
+                  "  pm.expect(endpointKeys).to.include('GET /api/catalog/access/me');",
                   "  pm.expect(endpointKeys).to.include('POST /api/catalog/access/request-otp');",
                   "  pm.expect(endpointKeys).to.include('POST /api/catalog/documents/access');",
                   "  pm.expect(endpointKeys).to.include('POST /api/catalog/documents');",
@@ -186,6 +189,25 @@
                   "  thumbnailUrls.forEach(function (url) {",
                   "    pm.expect(url).to.include(publicThumbnailBaseUrl);",
                   "    pm.expect(url).to.not.include('X-Goog-Signature');",
+                  "  });",
+                  "});",
+                  "",
+                  "pm.test('company and category display labels are included for UI rendering', function () {",
+                  "  (json.companies || []).forEach(function (company) {",
+                  "    pm.expect(company.company_name).to.be.a('string');",
+                  "",
+                  "    (company.categories || []).forEach(function (category) {",
+                  "      pm.expect(category.category_name).to.be.a('string');",
+                  "",
+                  "      (category.documents || []).forEach(function (document) {",
+                  "        pm.expect(document.company_name).to.be.a('string');",
+                  "        pm.expect(document.category_name).to.be.a('string');",
+                  "      });",
+                  "    });",
+                  "",
+                  "    (company.documents || []).forEach(function (document) {",
+                  "      pm.expect(document.company_name).to.be.a('string');",
+                  "    });",
                   "  });",
                   "});",
                   "",
@@ -301,6 +323,90 @@
           }
         }
       ]
+    },
+    {
+      "name": "Contact Messages",
+      "item": [
+        {
+          "name": "Create Contact Message",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('contact message is created', function () {",
+                  "  pm.expect([200, 201]).to.include(pm.response.code);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test('create response has expected fields', function () {",
+                  "  pm.expect(json.ok).to.eql(true);",
+                  "  pm.expect(json.id).to.be.a('string');",
+                  "  pm.expect(json.name).to.eql('Postman Contact');",
+                  "  pm.expect(json.email).to.eql('postman-contact@example.com');",
+                  "  pm.expect(json.created_at).to.be.a('string');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Origin",
+                "value": "{{frontend_origin}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Postman Contact\",\n  \"mobile\": \"9999999999\",\n  \"email\": \"postman-contact@example.com\",\n  \"message\": \"Testing contact message create from Postman\"\n}"
+            },
+            "url": "{{base_url}}/api/message",
+            "description": "Creates one contact message in Firestore database client-message-db, collection contact_messages. Required body fields: name, mobile, email, message. Adds server-side created_at."
+          }
+        },
+        {
+          "name": "Get Contact Messages",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('contact messages request succeeds', function () {",
+                  "  pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test('messages are returned as an array', function () {",
+                  "  pm.expect(json.messages).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-backend-admin-token",
+                "value": "{{BACKEND_ADMIN_TOKEN}}"
+              }
+            ],
+            "url": "{{base_url}}/api/message",
+            "description": "Returns contact messages ordered newest first. Requires x-backend-admin-token: {{BACKEND_ADMIN_TOKEN}}."
+          }
+        }
+      ],
+      "description": "Firestore-backed contact form message flow. POST /api/message writes customer messages without OTP/email/phone verification. GET /api/message lists messages newest first and requires x-backend-admin-token with BACKEND_ADMIN_TOKEN."
     },
     {
       "name": "Catalog Access And PDF Signing",
@@ -525,6 +631,42 @@
           }
         },
         {
+          "name": "Get Current Catalog Access Session",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('current access session lookup succeeds', function () {",
+                  "  pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set('access_expires_at', json.expires_at);",
+                  "",
+                  "pm.test('current access session response has expected fields', function () {",
+                  "  pm.expect(json.ok).to.eql(true);",
+                  "  pm.expect(json.auth_provider).to.be.oneOf(['google', 'whatsapp_otp', 'email_otp']);",
+                  "  pm.expect(json.name).to.be.a('string');",
+                  "  pm.expect(json.expires_at).to.be.a('string');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Origin",
+                "value": "{{frontend_origin}}"
+              }
+            ],
+            "url": "{{base_url}}/api/catalog/access/me"
+          }
+        },
+        {
           "name": "Create Access Cookie - WhatsApp Master OTP Shortcut",
           "event": [
             {
@@ -726,8 +868,8 @@
             "method": "POST",
             "header": [
               {
-                "key": "x-catalog-admin-token",
-                "value": "{{catalog_admin_token}}"
+                "key": "x-backend-admin-token",
+                "value": "{{BACKEND_ADMIN_TOKEN}}"
               }
             ],
             "body": {
@@ -788,8 +930,8 @@
             "method": "PUT",
             "header": [
               {
-                "key": "x-catalog-admin-token",
-                "value": "{{catalog_admin_token}}"
+                "key": "x-backend-admin-token",
+                "value": "{{BACKEND_ADMIN_TOKEN}}"
               }
             ],
             "body": {
@@ -852,8 +994,8 @@
             "method": "PUT",
             "header": [
               {
-                "key": "x-catalog-admin-token",
-                "value": "{{catalog_admin_token}}"
+                "key": "x-backend-admin-token",
+                "value": "{{BACKEND_ADMIN_TOKEN}}"
               }
             ],
             "body": {
@@ -893,8 +1035,8 @@
             "method": "DELETE",
             "header": [
               {
-                "key": "x-catalog-admin-token",
-                "value": "{{catalog_admin_token}}"
+                "key": "x-backend-admin-token",
+                "value": "{{BACKEND_ADMIN_TOKEN}}"
               }
             ],
             "url": "{{base_url}}/api/catalog/documents/{{document_id}}"
@@ -905,6 +1047,27 @@
     {
       "name": "Negative Checks",
       "item": [
+        {
+          "name": "Get Contact Messages Without Admin Token Should Fail",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('missing admin token is rejected', function () {",
+                  "  pm.expect([401]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/message",
+            "description": "GET /api/message must reject requests without x-backend-admin-token."
+          }
+        },
         {
           "name": "Document Access Without Cookie Should Fail",
           "event": [
@@ -942,6 +1105,41 @@
               "raw": "{\n  \"company_slug\": \"{{company_slug}}\",\n  \"category_slug\": \"{{category_slug}}\",\n  \"document_slug\": \"{{document_slug}}\",\n  \"action\": \"preview\"\n}"
             },
             "url": "{{base_url}}/api/catalog/documents/access"
+          }
+        },
+        {
+          "name": "Current Access Session Without Cookie Should Fail",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.cookies.jar().unset(pm.collectionVariables.get('base_url'), 'catalog_access');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('missing access session cookie is rejected', function () {",
+                  "  pm.expect([401]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Origin",
+                "value": "{{frontend_origin}}"
+              }
+            ],
+            "url": "{{base_url}}/api/catalog/access/me"
           }
         },
         {

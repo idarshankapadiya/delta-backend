@@ -11,15 +11,15 @@ import type { FastifyRequest } from 'fastify';
 @Injectable()
 export class CatalogAdminGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
-    const expectedToken = process.env.CATALOG_ADMIN_TOKEN?.trim();
+    const expectedToken = process.env.BACKEND_ADMIN_TOKEN?.trim();
 
     if (!expectedToken) {
-      throw new ServiceUnavailableException('CATALOG_ADMIN_TOKEN is required');
+      throw new ServiceUnavailableException('BACKEND_ADMIN_TOKEN is required');
     }
 
     const request = context.switchToHttp().getRequest<FastifyRequest>();
     const suppliedToken = this.getHeaderValue(
-      request.headers['x-catalog-admin-token'],
+      request.headers['x-backend-admin-token'],
     );
 
     if (!suppliedToken || !this.isSameToken(suppliedToken, expectedToken)) {

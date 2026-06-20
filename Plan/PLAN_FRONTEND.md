@@ -48,7 +48,9 @@ Expected document fields:
 {
   "document_id": "01J...",
   "company_slug": "schneider",
+  "company_name": "Schneider",
   "category_slug": "industrial-automation",
+  "category_name": "Industrial Automation",
   "document_slug": "plc-catalog",
   "display_name": "PLC Catalog",
   "thumbnail_url": "https://storage.googleapis.com/darshanent-thumbnail-dir/catalog-thumbnails/v1/schneider/plc-catalog.webp",
@@ -58,6 +60,8 @@ Expected document fields:
   }
 }
 ```
+
+`company_name` and `category_name` are display labels derived from their matching slug when explicit metadata is not present. Slug labels replace `_`/`-` with spaces and capitalize each word for UI display. Documents should use `display_name` as the UI label; do not add a separate `document_name`.
 
 Google sign-in:
 
@@ -227,7 +231,7 @@ Response:
 
 - `catalog_access` sessions are currently in memory until backend persistence is implemented.
 - `POST /api/catalog/access` is inquiry-only and intentionally does not set `catalog_access`.
-- Google sign-in requires the frontend Google client ID to match backend `CATALOG_GOOGLE_CLIENT_ID`.
+- Google sign-in requires the frontend Google client ID to match backend `GOOGLE_CLIENT_ID`.
 - Google ID token verification happens only on the backend; frontend success alone does not grant catalog access.
 - Backend default access TTL is 180 days (`CATALOG_ACCESS_TTL_SECONDS`), matching the 6-month same-browser login requirement.
 - The `catalog_access` cookie is HttpOnly and scoped to `Path=/api/catalog`; the Header needs a backend session-status endpoint to display reliable login state after refresh.
@@ -254,7 +258,7 @@ Response:
 
 - `delta-ui` origin is included in backend `FRONTEND_ORIGIN`.
 - `delta-ui` has a public Google web client ID, for example `VITE_GOOGLE_CLIENT_ID`.
-- Backend `CATALOG_GOOGLE_CLIENT_ID` includes the same Google web client ID.
+- Backend `GOOGLE_CLIENT_ID` includes the same Google web client ID.
 - Browser can read public thumbnails from `darshanent-thumbnail-dir`.
 - Browser/PDF viewer opens signed GCS URLs directly.
 - GCS CORS is only needed if the frontend fetches signed PDF URLs as blobs.

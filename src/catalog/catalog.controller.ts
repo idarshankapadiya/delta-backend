@@ -19,6 +19,7 @@ import { CatalogService } from './catalog.service';
 import { CatalogAccessDto } from './dto/catalog-access.dto';
 import { CatalogDocumentParamsDto } from './dto/catalog-document-params.dto';
 import { CatalogGoogleAccessDto } from './dto/catalog-google-access.dto';
+import { CatalogGoogleRedirectDto } from './dto/catalog-google-redirect.dto';
 import { CatalogLibraryDto } from './dto/catalog-library.dto';
 import { CatalogOtpRequestDto } from './dto/catalog-otp-request.dto';
 import { CatalogVerifyOtpDto } from './dto/catalog-verify-otp.dto';
@@ -27,6 +28,7 @@ import { CatalogRateLimiterService } from './catalog-rate-limiter.service';
 import { CatalogOriginGuard } from './catalog-origin.guard';
 import { CatalogAdminGuard } from './catalog-admin.guard';
 import { getCatalogUploadMaxBytes } from '../config/catalog.config';
+import { getAllowedFrontendOrigins } from '../config/http.config';
 
 interface CatalogMultipartFile {
   buffer: Buffer;
@@ -106,6 +108,63 @@ export class CatalogController {
       ok: true,
       auth_provider: session.authProvider,
       email: session.email,
+      name: session.name,
+      expires_at: session.expiresAt.toISOString(),
+    };
+  }
+
+  @Post('access/google/redirect')
+  async createGoogleRedirectAccess(
+    @Body() body: CatalogGoogleRedirectDto,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+  ) {
+    this.assertGoogleCsrfToken(body.g_csrf_token, request);
+
+    const ip = this.getClientIp(request);
+    this.rateLimiter.assertAllowed(
+      `catalog-google-access:${ip}`,
+      20,
+      60 * 60 * 1000,
+      'Too many Google sign-in attempts',
+    );
+
+    const session = await this.catalogAccessService.createGoogleAccess(
+      body.credential,
+      {
+        ip,
+        userAgent: this.getUserAgent(request),
+      },
+    );
+
+    reply.header(
+      'Set-Cookie',
+      this.createAccessCookie(session.token, session.expiresAt),
+    );
+
+    return reply.code(303).redirect(this.getFrontendHomeUrl());
+  }
+
+  @Get('access/me')
+  @UseGuards(CatalogOriginGuard)
+  getAccessMe(@Req() request: FastifyRequest) {
+    const token = this.parseCookies(request.headers.cookie).catalog_access;
+
+    if (!token) {
+      throw new UnauthorizedException('Catalog access is required');
+    }
+
+    const session = this.catalogAccessService.getAccessSession(token);
+
+    if (!session) {
+      throw new UnauthorizedException('Catalog access is required');
+    }
+
+    return {
+      ok: true,
+      auth_provider: session.authProvider,
+      email: session.email,
+      mobile: session.mobile,
       name: session.name,
       expires_at: session.expiresAt.toISOString(),
     };
@@ -204,11 +263,6 @@ export class CatalogController {
     @Req() request: FastifyRequest,
   ) {
     const ip = this.getClientIp(request);
-    const accessToken = this.getAccessToken(request);
-
-    if (!accessToken) {
-      throw new UnauthorizedException('Catalog access is required');
-    }
 
     this.rateLimiter.assertAllowed(
       `document-sign:${ip}`,
@@ -231,7 +285,7 @@ export class CatalogController {
 
     if (body.action === 'download') {
       this.rateLimiter.assertAllowed(
-        `download:${accessToken}`,
+        `download:${ip}`,
         20,
         24 * 60 * 60 * 1000,
         'Too many downloads for this access session',
@@ -359,18 +413,17 @@ export class CatalogController {
     return '';
   }
 
-  private getAccessToken(request: FastifyRequest): string | null {
-    const token = this.parseCookies(request.headers.cookie).catalog_access;
+  private assertGoogleCsrfToken(
+    bodyCsrfToken: string,
+    request: FastifyRequest,
+  ): void {
+    const cookieCsrfToken = this.parseCookies(
+      request.headers.cookie,
+    ).g_csrf_token;
 
-    if (!token) {
-      return null;
+    if (!cookieCsrfToken || cookieCsrfToken !== bodyCsrfToken) {
+      throw new BadRequestException('Invalid Google sign-in CSRF token');
     }
-
-    if (!this.catalogAccessService.validateAccessToken(token)) {
-      return null;
-    }
-
-    return token;
   }
 
   private parseCookies(
@@ -408,6 +461,24 @@ export class CatalogController {
     }
 
     return cookieParts.join('; ');
+  }
+
+  private getFrontendHomeUrl(): string {
+    const configuredUrl =
+      process.env.CATALOG_GOOGLE_REDIRECT_URL?.trim() ||
+      process.env.FRONTEND_BASE_URL?.trim() ||
+      getAllowedFrontendOrigins()[0] ||
+      'http://localhost:5173';
+
+    try {
+      const url = new URL(configuredUrl);
+      url.pathname = '/';
+      url.search = '';
+      url.hash = '';
+      return url.toString();
+    } catch {
+      return 'http://localhost:5173/';
+    }
   }
 
   private getClientIp(request: FastifyRequest): string {

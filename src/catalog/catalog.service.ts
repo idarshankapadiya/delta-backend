@@ -32,8 +32,6 @@ interface DocumentLookup {
 interface CatalogDocumentRecord extends CatalogDocumentSummary {
   object_name: string;
   relative_name: string;
-  company_name: string;
-  category_name?: string;
   original_file_name: string;
 }
 
@@ -523,7 +521,7 @@ export class CatalogService {
     const displayName = this.getCustomMetadata(object, 'display_name');
     const companyName =
       this.getCustomMetadata(object, 'company_name') ??
-      this.formatLabel(companyFolder);
+      this.formatLabel(companySlug ?? companyFolder);
     const categoryName =
       this.getCustomMetadata(object, 'category_name') ??
       (categorySlug ? this.formatLabel(categorySlug) : undefined);
@@ -538,7 +536,9 @@ export class CatalogService {
     return {
       document_id: documentId,
       company_slug: companySlug,
+      company_name: companyName,
       category_slug: categorySlug,
+      category_name: categoryName,
       document_slug: documentSlug,
       display_name: displayName,
       thumbnail_url: this.createCatalogThumbnailUrl(
@@ -548,8 +548,6 @@ export class CatalogService {
       metadata: this.createMetadata(object),
       object_name: object.name,
       relative_name: relativeName,
-      company_name: companyName,
-      category_name: categoryName,
       original_file_name: originalFileName,
     };
   }
@@ -824,7 +822,9 @@ export class CatalogService {
     return {
       document_id: record.document_id,
       company_slug: record.company_slug,
+      company_name: record.company_name,
       category_slug: record.category_slug,
+      category_name: record.category_name,
       document_slug: record.document_slug,
       display_name: record.display_name,
       thumbnail_url: record.thumbnail_url,

@@ -43,7 +43,9 @@ export interface CatalogDocumentRevision {
 export interface CatalogDocumentSummary {
   document_id: string;
   company_slug: string;
+  company_name: string;
   category_slug?: string;
+  category_name?: string;
   document_slug: string;
   display_name: string;
   thumbnail_url?: string;

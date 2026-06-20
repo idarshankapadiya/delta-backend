@@ -16,10 +16,10 @@
 
 - Current admin mutation endpoints: `src/catalog/catalog.controller.ts`.
 - Current admin guard: `src/catalog/catalog-admin.guard.ts`.
-- Current admin secret: `CATALOG_ADMIN_TOKEN`.
+- Current admin secret: `BACKEND_ADMIN_TOKEN`.
 - Upload/update/delete behavior plan: `Plan/PLAN_File_Upload.md`.
 
-Current backend admin auth is token based with `x-catalog-admin-token`. Google login and GCP group authorization are not implemented yet and need a backend auth layer before this UI should be used in production.
+Current backend admin auth is token based with `x-backend-admin-token`. Google login and GCP group authorization are not implemented yet and need a backend auth layer before this UI should be used in production.
 
 ## Current Backend Implementation
 
@@ -35,7 +35,7 @@ DELETE /api/catalog/documents/:document_id
 Admin mutation requests require:
 
 ```http
-x-catalog-admin-token: <CATALOG_ADMIN_TOKEN>
+x-backend-admin-token: <BACKEND_ADMIN_TOKEN>
 ```
 
 Current behavior:
@@ -45,7 +45,7 @@ Current behavior:
 - PDF replacement writes the new uploaded PDF filename, generates a new `document_id`, deletes the previous private PDF object, and writes the matching public thumbnail URL.
 - Delete removes the private uploaded PDF object and matching public document thumbnail.
 - Catalog listing and public customer routes use slugs; admin update/delete uses `document_id`.
-- `x-catalog-admin-token` must stay server-side. A browser production UI needs the future business session wrapper before direct use.
+- `x-backend-admin-token` must stay server-side. A browser production UI needs the future business session wrapper before direct use.
 
 ## Target Access Model
 
@@ -59,7 +59,7 @@ Current behavior:
 - Frontend calls business/admin catalog APIs with `credentials: "include"`.
 - Frontend restores login state by calling `/api/business/auth/me` on app load because the business session cookie is HttpOnly.
 - Header shows whether the business user is signed in, signed out, unauthorized, or expired.
-- Backend never exposes `CATALOG_ADMIN_TOKEN` to the browser.
+- Backend never exposes `BACKEND_ADMIN_TOKEN` to the browser.
 - Business auth is separate from public catalog `catalog_access`; public customer login must not authorize business APIs.
 
 ## Business Login UX Requirements
@@ -115,7 +115,7 @@ BUSINESS_UI_REQUIRED_GOOGLE_DOMAIN=<optional-company-domain>
 - Add backend group membership service that checks the configured Google Group/Cloud Identity group by email.
 - Add server-side session storage that can survive backend restarts before relying on 6-month login in production.
 - Move or wrap catalog admin mutations behind `/api/business/catalog/...` routes.
-- Keep existing `x-catalog-admin-token` endpoints only for local scripts/Postman if still needed.
+- Keep existing `x-backend-admin-token` endpoints only for local scripts/Postman if still needed.
 - Never accept group membership claims from the frontend; verify membership on the backend.
 
 ## Business API Shape
@@ -168,10 +168,10 @@ DELETE /api/catalog/documents/:document_id
 Current routes require:
 
 ```http
-x-catalog-admin-token: <CATALOG_ADMIN_TOKEN>
+x-backend-admin-token: <BACKEND_ADMIN_TOKEN>
 ```
 
-The browser UI must not receive or store `CATALOG_ADMIN_TOKEN`; use token-based admin routes only through Postman, local scripts, or a temporary local-only backend proxy during development.
+The browser UI must not receive or store `BACKEND_ADMIN_TOKEN`; use token-based admin routes only through Postman, local scripts, or a temporary local-only backend proxy during development.
 
 ## Catalog Management UI To-Do
 
@@ -208,7 +208,7 @@ The browser UI must not receive or store `CATALOG_ADMIN_TOKEN`; use token-based 
 - Use slugs as public catalog identity.
 - Do not let users edit `company_slug` or `document_slug` in an update flow unless backend explicitly supports slug migration later.
 - Do not construct private GCS paths in the browser.
-- Do not expose service account credentials, GCS credentials, or `CATALOG_ADMIN_TOKEN` to the browser.
+- Do not expose service account credentials, GCS credentials, or `BACKEND_ADMIN_TOKEN` to the browser.
 - Accept only PDF files in the upload control.
 - Respect backend upload size limit from `CATALOG_UPLOAD_MAX_BYTES`; show a friendly error before upload when known.
 - Treat public thumbnail paths as stable and cacheable; append a UI-only cache buster after successful replace if the old thumbnail is still visible.
@@ -259,6 +259,6 @@ The browser UI must not receive or store `CATALOG_ADMIN_TOKEN`; use token-based 
 - Group users can update display/category metadata by `document_id`.
 - Group users can replace a PDF and see the returned new `document_id`.
 - Group users can delete a document by `document_id`.
-- Frontend never exposes `CATALOG_ADMIN_TOKEN` or service credentials.
+- Frontend never exposes `BACKEND_ADMIN_TOKEN` or service credentials.
 - Catalog list refreshes after every mutation.
 - Public `delta-ui` catalog view reflects business changes after metadata refresh.

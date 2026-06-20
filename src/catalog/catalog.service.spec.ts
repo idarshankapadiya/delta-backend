@@ -23,6 +23,7 @@ describe('CatalogService', () => {
     expect(service.formatLabel('schneider-electric')).toBe(
       'Schneider Electric',
     );
+    expect(service.formatLabel('project_fd-wd')).toBe('Project Fd Wd');
   });
 
   it('builds navigation only from direct company PDFs with document metadata', () => {
@@ -69,7 +70,9 @@ describe('CatalogService', () => {
                 {
                   document_id: '01JABCDEF00000000000000000',
                   company_slug: 'schneider',
+                  company_name: 'Schneider',
                   category_slug: 'industrial-automation',
+                  category_name: 'Industrial Automation',
                   document_slug: 'plc-catalog',
                   display_name: 'PLC Catalog',
                   thumbnail_url:

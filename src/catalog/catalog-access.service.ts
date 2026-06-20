@@ -47,6 +47,14 @@ interface CatalogAccessSession {
   userAgent?: string;
 }
 
+interface CatalogAccessSessionSummary {
+  expiresAt: Date;
+  name: string;
+  mobile?: string;
+  email?: string;
+  authProvider: CatalogAuthProvider;
+}
+
 interface CatalogOtpChallenge {
   challengeId: string;
   channel: CatalogOtpChannel;
@@ -357,18 +365,28 @@ export class CatalogAccessService {
   }
 
   validateAccessToken(token: string): boolean {
+    return this.getAccessSession(token) !== null;
+  }
+
+  getAccessSession(token: string): CatalogAccessSessionSummary | null {
     const session = this.sessions.get(token);
 
     if (!session) {
-      return false;
+      return null;
     }
 
     if (session.expiresAt.getTime() <= Date.now()) {
       this.sessions.delete(token);
-      return false;
+      return null;
     }
 
-    return true;
+    return {
+      expiresAt: session.expiresAt,
+      name: session.name,
+      mobile: session.mobile,
+      email: session.email,
+      authProvider: session.authProvider,
+    };
   }
 
   private createSession(
@@ -753,11 +771,7 @@ export class CatalogAccessService {
   }
 
   private getGoogleClientIds(): string[] {
-    return (
-      process.env.CATALOG_GOOGLE_CLIENT_ID ??
-      process.env.GOOGLE_CLIENT_ID ??
-      ''
-    )
+    return (process.env.GOOGLE_CLIENT_ID ?? process.env.GOOGLE_CLIENT_ID ?? '')
       .split(',')
       .map((clientId) => clientId.trim())
       .filter(Boolean);
