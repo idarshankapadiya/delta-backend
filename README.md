@@ -12,13 +12,17 @@ $ npm install
 
 ```bash
 # development
-$ npm run start
+$ npm run start-backend
 
 # watch mode
-$ npm run start:dev
+$ npm run start-backend:dev
+
+# debug watch mode
+$ npm run start-backend:debug
 
 # production mode
-$ npm run start:prod
+$ npm run build
+$ npm run start-backend:prod
 ```
 
 ## Run tests
