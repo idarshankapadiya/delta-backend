@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
   ConflictException,
@@ -67,6 +68,7 @@ interface GcsObjectMetadata {
 
 @Injectable()
 export class CatalogService {
+  private readonly logger = new Logger(CatalogService.name);
   private readonly storage = new Storage();
 
   async getCatalogAll(): Promise<CatalogNavigationResponse> {
@@ -651,6 +653,10 @@ export class CatalogService {
         })
         .filter((object) => this.isCatalogPdf(object.name));
     } catch (error) {
+      this.logger.error(
+        `Unable to load catalog from GCS bucket="${bucketName}" prefix="${prefix}"`,
+        error instanceof Error ? error.stack : String(error),
+      );
       throw new ServiceUnavailableException('Unable to load catalog from GCS', {
         cause: error,
       });

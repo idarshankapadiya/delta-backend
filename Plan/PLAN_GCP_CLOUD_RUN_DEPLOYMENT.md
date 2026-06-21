@@ -4,7 +4,7 @@
 
 - Production entrypoint: `Procfile` runs `npm run start-backend:prod`.
 - Runtime pin: `package.json` uses Node `24.x`.
-- Node 24 GCS compatibility: `package.json` overrides `@google-cloud/storage` to use `gaxios@^7.1.5`, avoiding token fetch failures from the older nested request stack.
+- Node 24 GCS compatibility: `package.json` overrides `@google-cloud/storage` to use `gaxios@^7.1.5` and `gcp-metadata@^8.1.3`, avoiding token fetch failures from the older nested request/metadata stack.
 - Source deploy hygiene: `.gcloudignore` excludes local dependencies, build output, logs, and dotenv files.
 - App listens on `HOST` and Cloud Run-managed `PORT`; use `HOST=0.0.0.0` in production.
 - Cloud Run should use an attached service account; do not set `GOOGLE_APPLICATION_CREDENTIALS` in production.
