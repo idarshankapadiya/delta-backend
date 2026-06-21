@@ -1,194 +1,245 @@
-# GCP Cloud Run Deployment Plan
+# GCP Cloud Run Future Deployment Plan
 
-## Implemented Details
+## Summary
 
-- Production entrypoint: `Procfile` runs `npm run start-backend:prod`.
-- Runtime pin: `package.json` uses Node `24.x`.
-- Node 24 GCS compatibility: `package.json` overrides `@google-cloud/storage` to use `gaxios@^7.1.5` and `gcp-metadata@^8.1.3`, avoiding token fetch failures from the older nested request/metadata stack.
-- Source deploy hygiene: `.gcloudignore` excludes local dependencies, build output, logs, and dotenv files.
-- App listens on `HOST` and Cloud Run-managed `PORT`; use `HOST=0.0.0.0` in production.
-- Cloud Run should use an attached service account; do not set `GOOGLE_APPLICATION_CREDENTIALS` in production.
-- Local GCP key `/Users/darshankapadiya/.gcp/catalog-api-sa.json` belongs to `backend-api-sa@deweb-preview1.iam.gserviceaccount.com`. Use this same service account as the Cloud Run runtime identity, but do not upload or mount the JSON private key in Cloud Run.
+This file contains future deployment plans only. It is not the current production runbook.
 
-## Deployment Runbook
+- Current deployment details and current redeploy runbook live in `Plan/BACKEND_DEPLOYMENT_DOC.md`.
+- Current working API base URL: `https://delta-backend-157686675107.asia-south1.run.app/api`.
+- Main future goal: move the public backend API base URL to `https://api.darshanent.co.in/api`.
+- Current Cloud Run service should remain working while the future domain is introduced.
+- Do not execute any plan in this file unless the user explicitly asks for that work.
+- Before execution, create a comprehensive implementation plan and get explicit approval.
 
-Run these commands from the backend repository root:
+## Future Plan: Move Backend API To `api.darshanent.co.in`
 
-```bash
-cd /Users/darshankapadiya/Developer/delta/delta-backend
-```
-
-### 1. Set deployment values
-
-Replace `YOUR_CLOUD_RUN_REGION` with the real Cloud Run region.
-
-```bash
-export PROJECT_ID="deweb-preview1"
-export REGION="YOUR_CLOUD_RUN_REGION"
-export SERVICE_NAME="delta-backend"
-export FRONTEND_URL="https://darshanent.co.in"
-
-export PRIVATE_BUCKET="darshanent_catalog_dir"
-export PUBLIC_BUCKET="darshanent-thumbnail-dir"
-export FIRESTORE_DATABASE_ID="client-message-db"
-export GOOGLE_CLIENT_ID="157686675107-rg7sc0uq9gb8c037fm4a7lqv2em10sk9.apps.googleusercontent.com"
-
-export RUN_SA="backend-api-sa@deweb-preview1.iam.gserviceaccount.com"
-```
-
-Do not deploy these local-only values from `.env`:
-
-- `PORT`: Cloud Run provides this automatically.
-- `GOOGLE_APPLICATION_CREDENTIALS`: local-only path to `/Users/darshankapadiya/.gcp/catalog-api-sa.json`.
-
-Credential decision:
-
-- Local development can continue using `GOOGLE_APPLICATION_CREDENTIALS=/Users/darshankapadiya/.gcp/catalog-api-sa.json`.
-- GCP production should use the same identity by attaching `backend-api-sa@deweb-preview1.iam.gserviceaccount.com` to Cloud Run.
-- Do not store the JSON key file in Secret Manager, Cloud Run env vars, the repository, or the container image unless there is no other workable option.
-
-### 2. Authenticate GCP CLI
-
-```bash
-gcloud auth login
-gcloud auth application-default login
-gcloud config set project "$PROJECT_ID"
-```
-
-### 3. Enable required APIs
-
-```bash
-gcloud services enable \
-  run.googleapis.com \
-  cloudbuild.googleapis.com \
-  artifactregistry.googleapis.com \
-  firestore.googleapis.com \
-  storage.googleapis.com \
-  secretmanager.googleapis.com \
-  iamcredentials.googleapis.com
-```
-
-### 4. Confirm existing Cloud Run runtime service account
-
-```bash
-gcloud iam service-accounts describe "$RUN_SA"
-```
-
-Expected service account:
+Move the public production API from the generated Cloud Run URL to a branded API subdomain.
 
 ```txt
-backend-api-sa@deweb-preview1.iam.gserviceaccount.com
+Current API base:
+https://delta-backend-157686675107.asia-south1.run.app/api
+
+Future API base:
+https://api.darshanent.co.in/api
 ```
 
-If the deployer account cannot attach this service account to Cloud Run, grant the deployer `roles/iam.serviceAccountUser` on `backend-api-sa@deweb-preview1.iam.gserviceaccount.com`.
+The Cloud Run service should continue running as `delta-backend` in `asia-south1`. The custom domain should sit in front of Cloud Run through a Global External HTTPS Load Balancer.
 
-### 5. Grant runtime permissions
+### How It Differs From Current Deployment
 
-Firestore access:
+- Current deployment exposes Cloud Run directly through the generated `run.app` URL.
+- Future deployment adds a Global External HTTPS Load Balancer in front of Cloud Run.
+- Current deployment does not require DNS, global static IP, managed certificate, forwarding rule, URL map, backend service, or serverless NEG.
+- Future deployment requires DNS control for `darshanent.co.in`.
+- Current frontend can call `https://delta-backend-157686675107.asia-south1.run.app/api`.
+- Future frontend should call `https://api.darshanent.co.in/api`.
+- Current Cloud Run ingress can remain public.
+- Future deployment can optionally restrict Cloud Run ingress to internal/load-balancer traffic after the custom domain is stable.
+
+### Pros
+
+- Branded API URL aligned with `darshanent.co.in`.
+- Stable frontend API contract independent of Google-generated Cloud Run URLs.
+- Cleaner browser, CORS, logs, diagnostics, and production documentation story.
+- Allows future load-balancer features such as Cloud Armor, centralized SSL, URL routing, redirects, and controlled ingress.
+- Can be rolled out without breaking the current working Cloud Run URL.
+
+### Challenges And Roadblocks
+
+- Direct Cloud Run domain mapping is not available for the current `asia-south1` deployment path. A previous attempt returned: `Creating domain mappings is not allowed in asia-south1`.
+- Global External HTTPS Load Balancer adds GCP resources and possible cost.
+- Google-managed certificate activation depends on correct DNS and may take time.
+- DNS changes require access to the authoritative DNS provider for `darshanent.co.in`.
+- Misconfigured host rules, URL maps, backend services, serverless NEGs, or forwarding rules can cause 404/502 responses even when Cloud Run is healthy.
+- Restricting Cloud Run ingress too early can make the API unavailable before the load balancer is fully verified.
+- Frontend API base URL changes must be coordinated with frontend deployment and any browser/CDN cache behavior.
+
+### Prerequisites
+
+- Current backend is healthy:
 
 ```bash
-gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:$RUN_SA" \
-  --role="roles/datastore.user"
+export CURRENT_API_URL="https://delta-backend-157686675107.asia-south1.run.app"
+
+curl -i "$CURRENT_API_URL/api/health"
+curl -i "$CURRENT_API_URL/api"
+curl -i "$CURRENT_API_URL/api/catalog/all"
 ```
 
-Private catalog bucket access:
+- GCP project: `deweb-preview1`.
+- Cloud Run service: `delta-backend`.
+- Cloud Run region: `asia-south1`.
+- GCP permissions to manage:
+  - Global External HTTPS Load Balancer,
+  - global static IP address,
+  - Google-managed SSL certificate,
+  - serverless NEG,
+  - backend service,
+  - URL map,
+  - target HTTPS proxy,
+  - global forwarding rule,
+  - Cloud Run service ingress if it is restricted later.
+- DNS access for `darshanent.co.in`.
+- Decision on whether the default `run.app` URL should remain publicly reachable after custom domain verification.
+- Frontend deployment path ready to switch production API base URL to `https://api.darshanent.co.in/api`.
 
-```bash
-gcloud storage buckets add-iam-policy-binding "gs://$PRIVATE_BUCKET" \
-  --member="serviceAccount:$RUN_SA" \
-  --role="roles/storage.objectUser"
-```
+### Implementation Plan
 
-Public catalog asset bucket access:
-
-```bash
-gcloud storage buckets add-iam-policy-binding "gs://$PUBLIC_BUCKET" \
-  --member="serviceAccount:$RUN_SA" \
-  --role="roles/storage.objectUser"
-```
-
-Secret Manager access for `BACKEND_ADMIN_TOKEN`:
-
-```bash
-gcloud secrets add-iam-policy-binding BACKEND_ADMIN_TOKEN \
-  --member="serviceAccount:$RUN_SA" \
-  --role="roles/secretmanager.secretAccessor"
-```
-
-Signed Cloud Storage URL support:
-
-```bash
-gcloud iam service-accounts add-iam-policy-binding "$RUN_SA" \
-  --member="serviceAccount:$RUN_SA" \
-  --role="roles/iam.serviceAccountTokenCreator"
-```
-
-### 6. Store admin token in Secret Manager
-
-Use the real `BACKEND_ADMIN_TOKEN` value, not the local placeholder.
-
-```bash
-read -s BACKEND_ADMIN_TOKEN
-printf "%s" "$BACKEND_ADMIN_TOKEN" | gcloud secrets create BACKEND_ADMIN_TOKEN --data-file=- \
-  || printf "%s" "$BACKEND_ADMIN_TOKEN" | gcloud secrets versions add BACKEND_ADMIN_TOKEN --data-file=-
-unset BACKEND_ADMIN_TOKEN
-```
-
-### 7. Optional local build check
-
-```bash
-npm install
-npm run build
-```
-
-### 8. Deploy backend API to Cloud Run
-
-```bash
-gcloud run deploy "$SERVICE_NAME" \
-  --source . \
-  --region "$REGION" \
-  --service-account "$RUN_SA" \
-  --allow-unauthenticated \
-  --max-instances=1 \
-  --memory=2Gi \
-  --cpu=1 \
-  --timeout=300 \
-  --set-env-vars "NODE_ENV=production,HOST=0.0.0.0,FRONTEND_ORIGIN=$FRONTEND_URL,FRONTEND_BASE_URL=$FRONTEND_URL,GCS_CATALOG_BUCKET=$PRIVATE_BUCKET,GCS_CATALOG_PREFIX=,GCS_CATALOG_PUBLIC_ASSET_BUCKET=$PUBLIC_BUCKET,CATALOG_PUBLIC_ASSET_BASE_URL=https://storage.googleapis.com/$PUBLIC_BUCKET,CATALOG_SIGNED_URL_TTL_SECONDS=900,GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID,FIRESTORE_DATABASE_ID=$FIRESTORE_DATABASE_ID" \
-  --set-secrets "BACKEND_ADMIN_TOKEN=BACKEND_ADMIN_TOKEN:latest"
-```
-
-Keep `--max-instances=1` until catalog sessions move out of process memory.
-
-For Console UI deployment, choose this service account in the Cloud Run security settings:
+1. Verify the current Cloud Run URL before changing anything.
+2. Reserve a global static IP address for the future API load balancer.
+3. Create a Google-managed SSL certificate for `api.darshanent.co.in`.
+4. Create a serverless NEG:
+   - region: `asia-south1`,
+   - target: Cloud Run service `delta-backend`.
+5. Create a backend service using the serverless NEG.
+6. Create a URL map:
+   - host rule: `api.darshanent.co.in`,
+   - path matcher: `/*`,
+   - default/backend route: Cloud Run backend service.
+7. Create a target HTTPS proxy using the Google-managed certificate.
+8. Create a global forwarding rule:
+   - protocol: HTTPS,
+   - port: `443`,
+   - IP: reserved global static IP,
+   - target: HTTPS proxy.
+9. Add DNS record for `darshanent.co.in`:
 
 ```txt
-backend-api-sa@deweb-preview1.iam.gserviceaccount.com
+Type: A
+Name: api
+Value: <global-load-balancer-ip>
 ```
 
-Do not add `GOOGLE_APPLICATION_CREDENTIALS` in Cloud Run environment variables.
-
-## Verification
-
-After deployment, get the Cloud Run URL from the deploy command output and verify:
+10. Wait for DNS propagation and Google-managed certificate activation.
+11. Verify the future custom domain:
 
 ```bash
-export API_URL="https://YOUR_CLOUD_RUN_URL"
+export FUTURE_API_URL="https://api.darshanent.co.in"
+
+curl -i "$FUTURE_API_URL/api/health"
+curl -i "$FUTURE_API_URL/api"
+curl -i "$FUTURE_API_URL/api/catalog/all"
+```
+
+12. Update frontend production API base URL:
+
+```txt
+https://api.darshanent.co.in/api
+```
+
+13. Deploy frontend and verify browser requests from `https://darshanent.co.in` to `https://api.darshanent.co.in/api`.
+14. Monitor Cloud Run logs and load-balancer logs for 4xx/5xx responses.
+15. After stable verification, consider restricting Cloud Run ingress to internal and load-balancer traffic.
+
+### Acceptance Criteria
+
+- `https://api.darshanent.co.in/api/health` returns `200`.
+- `https://api.darshanent.co.in/api` returns the endpoint list.
+- `https://api.darshanent.co.in/api/catalog/all` returns catalog JSON and not `503`.
+- Google-managed certificate is active.
+- Frontend production requests use `https://api.darshanent.co.in/api`.
+- Existing Cloud Run URL remains healthy during migration.
+
+## Future Plan: GitHub-Based Continuous Deployment
+
+Move deployment source from local `gcloud run deploy --source .` to GitHub-triggered Cloud Run deployment.
+
+### How It Differs From Current Deployment
+
+- Current deployment is manually triggered from the local backend repository with `gcloud`.
+- Future deployment builds from GitHub after changes are pushed.
+- Current deployment uses Cloud Run source deploy and Google Cloud Buildpacks.
+- Future GitHub deployment should also use Google Cloud Buildpacks.
+- Dockerfile should not be selected unless a real `Dockerfile` is added and verified later.
+- Current deployer is the authenticated local GCP user.
+- Future deployer is the GitHub-connected Cloud Build trigger/service account.
+
+### Pros
+
+- Production revisions are built from version-controlled commits.
+- Easier repeatability and auditability.
+- Reduces dependency on one local machine having the correct GCP CLI/auth state.
+- Enables predictable branch-based deployment from `main`.
+- Keeps the same Buildpacks behavior that already works for this backend.
+
+### Challenges And Roadblocks
+
+- GitHub must contain the latest working deployment fixes before the trigger is trusted.
+- If the setup is configured as Dockerfile with `/Dockerfile`, deployment will fail because the repo currently has no Dockerfile.
+- Cloud Run env vars and Secret Manager mappings must stay in GCP, not GitHub.
+- Cloud Build trigger/service account must have permission to build and deploy Cloud Run.
+- A push to `main` can create a new production revision once the trigger is enabled.
+
+### Prerequisites
+
+- Current repository state is committed and pushed to GitHub, including:
+  - `Procfile`,
+  - `.gcloudignore`,
+  - `package.json`,
+  - `package-lock.json`,
+  - backend source changes,
+  - deployment docs under `Plan/`.
+- Cloud Run service `delta-backend` already exists in `asia-south1`.
+- Runtime service account remains `backend-api-sa@deweb-preview1.iam.gserviceaccount.com`.
+- Runtime env vars and `BACKEND_ADMIN_TOKEN` secret mapping match `Plan/BACKEND_DEPLOYMENT_DOC.md`.
+- GitHub connection is authorized in GCP.
+- Branch is `main` unless explicitly changed.
+
+### Implementation Plan
+
+1. Push the current backend repository state to GitHub.
+2. In Cloud Run, choose service `delta-backend`.
+3. Open continuous deployment setup.
+4. Select the GitHub repository.
+5. Use branch regex:
+
+```txt
+^main$
+```
+
+6. Select build type:
+
+```txt
+Go, Node.js, Python, Java, .NET Core, Ruby or PHP via Google Cloud's buildpacks
+```
+
+7. Set source directory/location:
+
+```txt
+/
+```
+
+8. Do not choose Dockerfile unless a future task adds and verifies a real Dockerfile.
+9. Confirm service settings:
+   - service: `delta-backend`,
+   - region: `asia-south1`,
+   - runtime service account: `backend-api-sa@deweb-preview1.iam.gserviceaccount.com`,
+   - max instances: `1`,
+   - memory: `2Gi`,
+   - CPU: `1`,
+   - timeout: `300`,
+   - allow unauthenticated.
+10. Confirm env vars and secret mapping match `Plan/BACKEND_DEPLOYMENT_DOC.md`.
+11. Save trigger and allow first deployment.
+12. Verify the new revision:
+
+```bash
+export API_URL="https://delta-backend-157686675107.asia-south1.run.app"
 
 curl -i "$API_URL/api/health"
 curl -i "$API_URL/api"
 curl -i "$API_URL/api/catalog/all"
 ```
 
-Check logs if verification fails:
+### Acceptance Criteria
 
-```bash
-gcloud run services logs read "$SERVICE_NAME" \
-  --region "$REGION" \
-  --limit=100
-```
+- A GitHub push to `main` creates a Cloud Build build and a new Cloud Run revision.
+- Revision uses Buildpacks and `Procfile`, not Dockerfile.
+- Deployed service keeps the expected runtime service account.
+- Deployed service keeps the expected env vars and `BACKEND_ADMIN_TOKEN` secret mapping.
+- Current Cloud Run smoke checks stay green.
 
-## Future Plan
+## Other Future Backend Deployment Plans
 
 - Disable, remove, or feature-flag public OTP routes until the feature is ready.
 - Move catalog sessions and OTP challenges from process memory to Firestore or Redis.
