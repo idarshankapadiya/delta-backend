@@ -132,6 +132,30 @@ POST /api/business/auth/google
 POST /api/business/auth/logout
 ```
 
+## Authenticated Business API Documentation
+
+- Do not publish Swagger UI, an OpenAPI document, or other API documentation for public endpoints.
+- Provide business API documentation only through the authenticated business dashboard at:
+
+```text
+https://business.darshanent.co.in/api/business/docs
+```
+
+- The documentation must describe only `/api/business/**` endpoints. Exclude public catalog,
+  contact, health, legacy token-admin, and `/api/internal/**` endpoints from its OpenAPI document.
+- Protect the Swagger UI, its static assets, and its OpenAPI JSON with the same exact business-site
+  origin and valid `__Host-business_session` checks used by the business API. Client-side route
+  hiding alone is not authorization.
+- Keep the documentation route under `/api/business` so the path-scoped business session cookie is
+  sent with documentation requests.
+- Disable Swagger UI `Try it out` in production. The dashboard remains the supported interface for
+  state-changing business operations and continues to apply CSRF protection.
+- Do not include credentials, tokens, secret-header values, private GCS paths, signed URLs, internal
+  service URLs, or example customer data in schemas or examples.
+- Do not expose Swagger from the IAM-protected `delta-backend-admin` service through the business
+  domain. Internal operator endpoints remain documented only in repository-controlled operational
+  documentation.
+
 Auth response shape:
 
 ```json
@@ -237,6 +261,8 @@ The browser UI must not receive or store `BACKEND_ADMIN_TOKEN`; use token-based 
 - All group membership decisions happen server-side against the configured GCP/Cloud Identity group.
 - Frontend must not trust a client-side email domain, cached membership flag, ID-token payload, or localStorage value as authorization.
 - Business app origin must be explicitly allowed by backend CORS/origin configuration.
+- Business Swagger UI and OpenAPI JSON are unavailable without a valid business session and are not
+  routed from `darshanent.co.in` or `www.darshanent.co.in`.
 
 ## Open Backend Decisions
 
@@ -260,5 +286,9 @@ The browser UI must not receive or store `BACKEND_ADMIN_TOKEN`; use token-based 
 - Group users can replace a PDF and see the returned new `document_id`.
 - Group users can delete a document by `document_id`.
 - Frontend never exposes `BACKEND_ADMIN_TOKEN` or service credentials.
+- An authenticated business user can open `/api/business/docs`; signed-out or unauthorized users
+  cannot load the Swagger UI, its assets, or its OpenAPI JSON.
+- The business OpenAPI document contains only `/api/business/**` endpoints and production Swagger
+  UI does not permit `Try it out` requests.
 - Catalog list refreshes after every mutation.
 - Public `delta-ui` catalog view reflects business changes after metadata refresh.

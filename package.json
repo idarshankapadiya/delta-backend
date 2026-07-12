@@ -10,7 +10,6 @@
   },
   "scripts": {
     "build": "nest build",
-    "catalog:migrate-metadata": "ts-node src/catalog/migrate-catalog-metadata.ts",
     "deploy:gcp": "bash scripts/deploy-gcp.sh",
     "deploy:gcp:admin": "bash scripts/deploy-gcp-admin.sh",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
