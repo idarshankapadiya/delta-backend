@@ -1,69 +1,210 @@
-## Description
+# Delta Backend
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+NestJS API for the public Darshan Enterprises website and the Business Delta
+administration dashboard.
 
-## Project setup
+## Production surfaces
 
-```bash
-$ npm install
-```
+| Surface             | Intended URL                        | Purpose                                                            |
+| ------------------- | ----------------------------------- | ------------------------------------------------------------------ |
+| Public/business API | `https://darshanent.co.in/api`      | Public catalog/message APIs and Google-authenticated business APIs |
+| Internal admin API  | `delta-backend-admin` Cloud Run URL | IAM-protected Postman/operator catalog operations                  |
 
-## Compile and run the project
+The two Cloud Run services use the same source code but have separate security
+boundaries:
 
-```bash
-# development
-$ npm run start-backend
+- `delta-backend` exposes public and business routes. It must not contain
+  `BACKEND_ADMIN_TOKEN`.
+- `delta-backend-admin` exposes only `/api/internal/**` and `/api/health`. It
+  requires Cloud Run IAM plus `x-backend-admin-token`.
 
-# watch mode
-$ npm run start-backend:dev
+The current scripts still attach the same runtime service account to both
+services. Before final production hardening, use a dedicated admin runtime
+service account for `delta-backend-admin` and remove
+`BACKEND_ADMIN_TOKEN` access from the public service account.
 
-# debug watch mode
-$ npm run start-backend:debug
+## Local setup
 
-# production mode
-$ npm run build
-$ npm run start-backend:prod
-```
+Requirements:
 
-## Run tests
-
-```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
-```
-
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+- Node.js 24
+- npm
+- Google Cloud CLI for deployment
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+npm install
+npm run build
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+Local development:
 
-## Resources
+```bash
+npm run start-backend:dev
+```
 
-Check out a few resources that may come in handy when working with NestJS:
+Tests:
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+```bash
+npm run lint
+npm test -- --runInBand
+npm run test:e2e -- --runInBand
+npm run build
+```
 
-## License
+## Deployment commands
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+The package provides:
+
+```json
+"deploy:gcp": "bash scripts/deploy-gcp.sh",
+"deploy:gcp:admin": "bash scripts/deploy-gcp-admin.sh"
+```
+
+Run them through npm from the backend repository root:
+
+```bash
+cd /Users/darshankapadiya/Developer/delta/delta-backend
+
+npm run deploy:gcp
+npm run deploy:gcp:admin
+```
+
+### `npm run deploy:gcp`
+
+Updates the existing `delta-backend` Cloud Run service from the current local
+working tree.
+
+It:
+
+- deploys to project `deweb-preview1`, region `asia-south1`;
+- attaches the backend runtime service account;
+- configures the public and business origins;
+- configures Google authentication, Firestore, GCS and reCAPTCHA;
+- maps `BUSINESS_UI_CSRF_SECRET` from Secret Manager;
+- removes `BACKEND_ADMIN_TOKEN` from the public service;
+- restricts ingress to internal and external load-balancer traffic;
+- disables the default `run.app` URL;
+- keeps the maximum instance count at one while public catalog sessions remain
+  process-local.
+
+Required shell variables:
+
+```bash
+export BUSINESS_UI_ALLOWED_GOOGLE_EMAILS="admin1@gmail.com,admin2@gmail.com"
+export RECAPTCHA_ENTERPRISE_SITE_KEY="<production-site-key>"
+```
+
+Optional override:
+
+```bash
+export RECAPTCHA_ENTERPRISE_PROJECT_ID="deweb-preview1"
+```
+
+The allowlist can also be read from the ignored local `.env`, but an explicit
+shell export is clearer for production deployment.
+
+### `npm run deploy:gcp:admin`
+
+Creates or updates the separate `delta-backend-admin` Cloud Run service from
+the current local working tree.
+
+It:
+
+- requires authenticated Cloud Run invocation;
+- enables only `/api/internal/**` and `/api/health` at application level;
+- maps `BACKEND_ADMIN_TOKEN` and `BUSINESS_UI_CSRF_SECRET` from Secret Manager;
+- keeps browser origins blocked from internal routes;
+- leaves the service URL enabled so approved operators can invoke it with an
+  IAM identity token.
+
+Required shell variable:
+
+```bash
+export BUSINESS_UI_ALLOWED_GOOGLE_EMAILS="admin1@gmail.com,admin2@gmail.com"
+```
+
+The operator must also be granted `roles/run.invoker` on
+`delta-backend-admin`.
+
+## Are these commands enough?
+
+They are enough for a **routine code revision deployment only after the
+one-time GCP configuration is complete**.
+
+They do not create or configure:
+
+- the `darshanent.co.in` external Application Load Balancer;
+- `/api` and `/api/*` URL-map routes to `delta-backend`;
+- DNS or TLS certificates;
+- Cloud Armor;
+- OAuth Authorized JavaScript Origins;
+- reCAPTCHA Enterprise keys;
+- Firestore TTL policies;
+- Secret Manager secret values or secret IAM permissions;
+- runtime service-account IAM permissions;
+- operator `roles/run.invoker` grants.
+
+### Current deployment warning
+
+As verified on 5 July 2026:
+
+- `delta-backend` exists and its default `run.app` URL is still enabled;
+- `delta-backend-admin` does not exist yet;
+- `BUSINESS_UI_CSRF_SECRET` does not exist yet, so both scripts would fail;
+- the public runtime service account currently has access to
+  `BACKEND_ADMIN_TOKEN`;
+- `https://darshanent.co.in/api/health` returns the public UI HTML rather than
+  backend health JSON.
+
+Do **not** run `npm run deploy:gcp` until the load balancer routes `/api` and
+`/api/*` to `delta-backend`. The script disables the default `run.app` URL, so
+running it before that route exists can make the public API unreachable.
+
+## Which deployment command should I run?
+
+| Change                                                            | Command                                                  |
+| ----------------------------------------------------------------- | -------------------------------------------------------- |
+| Public routes, business authentication, business catalog/messages | `npm run deploy:gcp`                                     |
+| Internal Postman/operator routes only                             | `npm run deploy:gcp:admin`                               |
+| Shared services, dependencies, DTOs, catalog or message logic     | Run both commands                                        |
+| Documentation/frontend-only change                                | Neither backend command                                  |
+| First production setup                                            | Complete the infrastructure runbook first, then run both |
+
+Deployments are independent. Updating `delta-backend` does not update
+`delta-backend-admin`, even though both use the same repository.
+
+## Recommended routine deployment
+
+```bash
+git status --short
+npm install
+npm run lint
+npm test -- --runInBand
+npm run build
+
+gcloud auth list
+gcloud config set project deweb-preview1
+
+export BUSINESS_UI_ALLOWED_GOOGLE_EMAILS="admin1@gmail.com,admin2@gmail.com"
+export RECAPTCHA_ENTERPRISE_SITE_KEY="<production-site-key>"
+
+# Run only after darshanent.co.in/api is routed to delta-backend.
+npm run deploy:gcp
+
+# Run when internal or shared backend code must also be released.
+npm run deploy:gcp:admin
+```
+
+These scripts deploy the current local files, including uncommitted changes.
+Review `git status` and `git diff` before running them.
+
+## Full deployment runbook
+
+See [Plan/BACKEND_DEPLOYMENT_DOC.md](Plan/BACKEND_DEPLOYMENT_DOC.md) for:
+
+- one-time infrastructure and IAM requirements;
+- secret setup;
+- safe deployment order;
+- production verification;
+- operator authentication;
+- rollback commands.

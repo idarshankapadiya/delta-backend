@@ -1,26 +1,33 @@
 # GCP Cloud Run Future Deployment Plan
 
+> Selected API URL: the production API base is
+> `https://darshanent.co.in/api`.
+> Route `/api` and `/api/*` to the backend serverless NEG using the main
+> domain's external Application Load Balancer. See
+> `PLAN_BUSINESS_API_SECURITY_DEPLOYMENT.md`.
+
 ## Summary
 
 This file contains future deployment plans only. It is not the current production runbook.
 
 - Current deployment details and current redeploy runbook live in `Plan/BACKEND_DEPLOYMENT_DOC.md`.
 - Current working API base URL: `https://delta-backend-157686675107.asia-south1.run.app/api`.
-- Main future goal: move the public backend API base URL to `https://api.darshanent.co.in/api`.
+- Main future goal: move the public backend API base URL to `https://darshanent.co.in/api`.
 - Current Cloud Run service should remain working while the future domain is introduced.
 - Do not execute any plan in this file unless the user explicitly asks for that work.
 - Before execution, create a comprehensive implementation plan and get explicit approval.
 
-## Future Plan: Move Backend API To `api.darshanent.co.in`
+## Future Plan: Move Backend API To `darshanent.co.in`
 
-Move the public production API from the generated Cloud Run URL to a branded API subdomain.
+Move the public production API from the generated Cloud Run URL to the main
+website's `/api` path.
 
 ```txt
 Current API base:
 https://delta-backend-157686675107.asia-south1.run.app/api
 
 Future API base:
-https://api.darshanent.co.in/api
+https://darshanent.co.in/api
 ```
 
 The Cloud Run service should continue running as `delta-backend` in `asia-south1`. The custom domain should sit in front of Cloud Run through a Global External HTTPS Load Balancer.
@@ -32,13 +39,13 @@ The Cloud Run service should continue running as `delta-backend` in `asia-south1
 - Current deployment does not require DNS, global static IP, managed certificate, forwarding rule, URL map, backend service, or serverless NEG.
 - Future deployment requires DNS control for `darshanent.co.in`.
 - Current frontend can call `https://delta-backend-157686675107.asia-south1.run.app/api`.
-- Future frontend should call `https://api.darshanent.co.in/api`.
+- Future frontend should call `https://darshanent.co.in/api`.
 - Current Cloud Run ingress can remain public.
 - Future deployment can optionally restrict Cloud Run ingress to internal/load-balancer traffic after the custom domain is stable.
 
 ### Pros
 
-- Branded API URL aligned with `darshanent.co.in`.
+- Same-origin API URL aligned with `darshanent.co.in`.
 - Stable frontend API contract independent of Google-generated Cloud Run URLs.
 - Cleaner browser, CORS, logs, diagnostics, and production documentation story.
 - Allows future load-balancer features such as Cloud Armor, centralized SSL, URL routing, redirects, and controlled ingress.
@@ -81,21 +88,21 @@ curl -i "$CURRENT_API_URL/api/catalog/all"
   - Cloud Run service ingress if it is restricted later.
 - DNS access for `darshanent.co.in`.
 - Decision on whether the default `run.app` URL should remain publicly reachable after custom domain verification.
-- Frontend deployment path ready to switch production API base URL to `https://api.darshanent.co.in/api`.
+- Frontend deployment path ready to switch production API base URL to `https://darshanent.co.in/api`.
 
 ### Implementation Plan
 
 1. Verify the current Cloud Run URL before changing anything.
 2. Reserve a global static IP address for the future API load balancer.
-3. Create a Google-managed SSL certificate for `api.darshanent.co.in`.
+3. Create a Google-managed SSL certificate for `darshanent.co.in`.
 4. Create a serverless NEG:
    - region: `asia-south1`,
    - target: Cloud Run service `delta-backend`.
 5. Create a backend service using the serverless NEG.
 6. Create a URL map:
-   - host rule: `api.darshanent.co.in`,
-   - path matcher: `/*`,
-   - default/backend route: Cloud Run backend service.
+   - host rule: `darshanent.co.in`,
+   - path rules `/api` and `/api/*`: Cloud Run backend service,
+   - default route `/*`: public UI backend service.
 7. Create a target HTTPS proxy using the Google-managed certificate.
 8. Create a global forwarding rule:
    - protocol: HTTPS,
@@ -106,7 +113,7 @@ curl -i "$CURRENT_API_URL/api/catalog/all"
 
 ```txt
 Type: A
-Name: api
+Name: @
 Value: <global-load-balancer-ip>
 ```
 
@@ -114,7 +121,7 @@ Value: <global-load-balancer-ip>
 11. Verify the future custom domain:
 
 ```bash
-export FUTURE_API_URL="https://api.darshanent.co.in"
+export FUTURE_API_URL="https://darshanent.co.in"
 
 curl -i "$FUTURE_API_URL/api/health"
 curl -i "$FUTURE_API_URL/api"
@@ -124,20 +131,20 @@ curl -i "$FUTURE_API_URL/api/catalog/all"
 12. Update frontend production API base URL:
 
 ```txt
-https://api.darshanent.co.in/api
+https://darshanent.co.in/api
 ```
 
-13. Deploy frontend and verify browser requests from `https://darshanent.co.in` to `https://api.darshanent.co.in/api`.
+13. Deploy frontend and verify browser requests from `https://darshanent.co.in` to `https://darshanent.co.in/api`.
 14. Monitor Cloud Run logs and load-balancer logs for 4xx/5xx responses.
 15. After stable verification, consider restricting Cloud Run ingress to internal and load-balancer traffic.
 
 ### Acceptance Criteria
 
-- `https://api.darshanent.co.in/api/health` returns `200`.
-- `https://api.darshanent.co.in/api` returns the endpoint list.
-- `https://api.darshanent.co.in/api/catalog/all` returns catalog JSON and not `503`.
+- `https://darshanent.co.in/api/health` returns `200`.
+- `https://darshanent.co.in/api` returns the endpoint list.
+- `https://darshanent.co.in/api/catalog/all` returns catalog JSON and not `503`.
 - Google-managed certificate is active.
-- Frontend production requests use `https://api.darshanent.co.in/api`.
+- Frontend production requests use `https://darshanent.co.in/api`.
 - Existing Cloud Run URL remains healthy during migration.
 
 ## Future Plan: GitHub-Based Continuous Deployment

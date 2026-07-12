@@ -1,95 +1,179 @@
-# Backend Deployment Doc
+# Backend Deployment Runbook
 
-## Summary
+## Decision
 
-The backend is currently deployed to Google Cloud Run and is working through the default Cloud Run service URL.
+Use two independent Cloud Run services built from this repository:
 
-- Current Cloud Run service URL: `https://delta-backend-157686675107.asia-south1.run.app`
-- Current API base URL: `https://delta-backend-157686675107.asia-south1.run.app/api`
-- Current project: `deweb-preview1`
-- Current region: `asia-south1`
-- Current service: `delta-backend`
-- Current verified revision: `delta-backend-00003-rqh`
-- Current runtime service account: `backend-api-sa@deweb-preview1.iam.gserviceaccount.com`
-- Current build method: Cloud Run source deploy with Google Cloud Buildpacks.
-- Current entrypoint: `Procfile` runs `npm run start-backend:prod`.
-- Current Node runtime: `package.json` pins Node `24.x`.
-- Current smoke checks pass for `/api/health`, `/api`, and `/api/catalog/all`.
+| Service               | Exposure                                      | Routes                                                   |
+| --------------------- | --------------------------------------------- | -------------------------------------------------------- |
+| `delta-backend`       | Public through `https://darshanent.co.in/api` | Public catalog/message and authenticated business routes |
+| `delta-backend-admin` | Cloud Run IAM protected                       | `/api/internal/**` and `/api/health` only                |
 
-## Implemented Deployment Details
+The selected browser API base is:
 
-- Production entrypoint: `Procfile` runs `npm run start-backend:prod`.
-- Runtime pin: `package.json` uses Node `24.x`.
-- Node 24 GCS compatibility: `package.json` overrides `@google-cloud/storage` to use `gaxios@^7.1.5` and `gcp-metadata@^8.1.3`, avoiding token fetch failures from the older nested request/metadata stack.
-- Source deploy hygiene: `.gcloudignore` excludes local dependencies, build output, logs, and dotenv files.
-- App listens on `HOST` and Cloud Run-managed `PORT`; production uses `HOST=0.0.0.0`.
-- Cloud Run uses an attached service account; production does not set `GOOGLE_APPLICATION_CREDENTIALS`.
-- Local GCP key `/Users/darshankapadiya/.gcp/catalog-api-sa.json` belongs to `backend-api-sa@deweb-preview1.iam.gserviceaccount.com`. This identity is attached to Cloud Run as the runtime identity, but the JSON private key is not uploaded, mounted, stored in Secret Manager, added to Cloud Run env vars, committed, or baked into the container image.
-- `BACKEND_ADMIN_TOKEN` is stored in Secret Manager and attached to Cloud Run as `BACKEND_ADMIN_TOKEN=BACKEND_ADMIN_TOKEN:latest`.
-- `--max-instances=1` is intentionally used until catalog sessions move out of process memory.
-
-## Current Production URLs
-
-```txt
-Cloud Run service:
-https://delta-backend-157686675107.asia-south1.run.app
-
-API base:
-https://delta-backend-157686675107.asia-south1.run.app/api
-
-Health:
-https://delta-backend-157686675107.asia-south1.run.app/api/health
-
-Endpoint index:
-https://delta-backend-157686675107.asia-south1.run.app/api
-
-Catalog:
-https://delta-backend-157686675107.asia-south1.run.app/api/catalog/all
+```text
+https://darshanent.co.in/api
 ```
 
-## Current Environment And Secrets
+The external Application Load Balancer must route:
 
-Runtime env vars used by Cloud Run:
+```text
+darshanent.co.in/api
+darshanent.co.in/api/*
+  → asia-south1 serverless NEG
+  → delta-backend
 
-```env
-NODE_ENV=production
-HOST=0.0.0.0
-FRONTEND_ORIGIN=https://darshanent.co.in
-FRONTEND_BASE_URL=https://darshanent.co.in
-GCS_CATALOG_BUCKET=darshanent_catalog_dir
-GCS_CATALOG_PREFIX=
-GCS_CATALOG_PUBLIC_ASSET_BUCKET=darshanent-thumbnail-dir
-CATALOG_PUBLIC_ASSET_BASE_URL=https://storage.googleapis.com/darshanent-thumbnail-dir
-CATALOG_SIGNED_URL_TTL_SECONDS=900
-GOOGLE_CLIENT_ID=157686675107-rg7sc0uq9gb8c037fm4a7lqv2em10sk9.apps.googleusercontent.com
-FIRESTORE_DATABASE_ID=client-message-db
+darshanent.co.in/*
+  → public UI backend
 ```
 
-Runtime secret mapping:
+Do not use Firebase Hosting rewrites for the API. Firebase Hosting strips
+incoming cookies other than `__session`, while this application intentionally
+uses separate HttpOnly business and public catalog cookies.
 
-```txt
-BACKEND_ADMIN_TOKEN=BACKEND_ADMIN_TOKEN:latest
+## Current state: 5 July 2026
+
+Read-only production checks showed:
+
+| Check                                          | Current result                                          |
+| ---------------------------------------------- | ------------------------------------------------------- |
+| `delta-backend`                                | Exists                                                  |
+| Latest ready revision                          | `delta-backend-00006-d49`                               |
+| Runtime service account                        | `backend-api-sa@deweb-preview1.iam.gserviceaccount.com` |
+| Ingress                                        | `all`                                                   |
+| Default `run.app` URL                          | Enabled                                                 |
+| `delta-backend-admin`                          | Does not exist                                          |
+| `BUSINESS_UI_CSRF_SECRET`                      | Does not exist                                          |
+| `BACKEND_ADMIN_TOKEN`                          | Exists                                                  |
+| Public runtime access to `BACKEND_ADMIN_TOKEN` | Currently granted                                       |
+| `https://darshanent.co.in/api/health`          | Returns frontend HTML, not backend JSON                 |
+| Current Cloud Run `/api/health`                | Returns backend JSON                                    |
+
+Consequently, the repository is code-ready but the selected
+`darshanent.co.in/api` infrastructure is not ready.
+
+Both deployment scripts currently attach
+`backend-api-sa@deweb-preview1.iam.gserviceaccount.com`. This works
+functionally, but it means a compromise of the public service identity could
+read `BACKEND_ADMIN_TOKEN`. For least privilege:
+
+1. create a dedicated runtime service account for `delta-backend-admin`;
+2. grant `BACKEND_ADMIN_TOKEN` access only to that admin identity;
+3. update `scripts/deploy-gcp-admin.sh` to use the admin identity;
+4. remove the public runtime identity from the admin secret policy.
+
+### Critical warning
+
+Do not run:
+
+```bash
+npm run deploy:gcp
 ```
 
-Local-only values that should not be deployed to Cloud Run:
+until `/api` and `/api/*` are routed through the load balancer to
+`delta-backend`.
 
-- `PORT`: Cloud Run provides this automatically.
-- `GOOGLE_APPLICATION_CREDENTIALS`: local-only path to `/Users/darshankapadiya/.gcp/catalog-api-sa.json`.
+The script changes ingress to `internal-and-cloud-load-balancing` and disables
+the default `run.app` URL. Without a working load-balancer path, that deployment
+can make the public API unreachable.
 
-## Current GCP Resources
+## What the two scripts do
+
+### Public/business deployment
+
+```bash
+npm run deploy:gcp
+```
+
+Script: `scripts/deploy-gcp.sh`
+
+Behavior:
+
+- refuses to create `delta-backend` accidentally; the service must exist;
+- deploys the current local source using Cloud Buildpacks;
+- uses Node 24 from `package.json`;
+- attaches
+  `backend-api-sa@deweb-preview1.iam.gserviceaccount.com`;
+- allows unauthenticated network invocation because public routes exist;
+- relies on application guards for business authorization;
+- restricts ingress to internal/load-balancer traffic;
+- disables the default Cloud Run URL;
+- configures exact public/business frontend origins;
+- configures Google OAuth audience, Firestore, GCS and reCAPTCHA;
+- maps `BUSINESS_UI_CSRF_SECRET` from Secret Manager;
+- removes `BACKEND_ADMIN_TOKEN` from the public service;
+- retains a one-instance limit because public catalog sessions and OTP state
+  are still process-local.
+
+Required deployment inputs:
+
+```bash
+export BUSINESS_UI_ALLOWED_GOOGLE_EMAILS="admin1@gmail.com,admin2@gmail.com"
+export RECAPTCHA_ENTERPRISE_SITE_KEY="<production-site-key>"
+```
+
+Optional:
+
+```bash
+export RECAPTCHA_ENTERPRISE_PROJECT_ID="deweb-preview1"
+```
+
+### Internal admin deployment
+
+```bash
+npm run deploy:gcp:admin
+```
+
+Script: `scripts/deploy-gcp-admin.sh`
+
+Behavior:
+
+- creates or updates `delta-backend-admin`;
+- deploys the current local source;
+- requires Cloud Run IAM authentication;
+- leaves its default URL enabled for approved operators;
+- exposes only `/api/internal/**` and `/api/health` at application level;
+- rejects requests carrying browser `Origin`;
+- requires `x-backend-admin-token` after IAM authentication;
+- maps `BACKEND_ADMIN_TOKEN` and `BUSINESS_UI_CSRF_SECRET` from Secret Manager.
+
+Required deployment input:
+
+```bash
+export BUSINESS_UI_ALLOWED_GOOGLE_EMAILS="admin1@gmail.com,admin2@gmail.com"
+```
+
+## Are the commands enough?
+
+For normal revision updates: yes, after prerequisites exist.
+
+For initial production setup: no. The scripts deliberately do not provision
+networking, IAM, OAuth, reCAPTCHA, Firestore TTL, or secret values.
+
+The two services are independent:
+
+- run only `deploy:gcp` for public/business-only changes;
+- run only `deploy:gcp:admin` for internal-controller-only changes;
+- run both when changing shared catalog/message services, dependencies,
+  validation, configuration or security code.
+
+## One-time prerequisites
+
+### 1. Google Cloud resources
 
 - Project: `deweb-preview1`
-- Cloud Run service: `delta-backend`
-- Cloud Run region: `asia-south1`
-- Runtime service account: `backend-api-sa@deweb-preview1.iam.gserviceaccount.com`
+- Region: `asia-south1`
+- Existing public service: `delta-backend`
+- New private operator service: `delta-backend-admin`
+- Runtime service account:
+  `backend-api-sa@deweb-preview1.iam.gserviceaccount.com`
+- Firestore database: `client-message-db`
 - Private catalog bucket: `darshanent_catalog_dir`
 - Public thumbnail bucket: `darshanent-thumbnail-dir`
-- Firestore database: `client-message-db`
-- Secret Manager secret: `BACKEND_ADMIN_TOKEN`
 
-Required enabled APIs:
+Enable:
 
-```txt
+```text
 run.googleapis.com
 cloudbuild.googleapis.com
 artifactregistry.googleapis.com
@@ -98,207 +182,366 @@ storage.googleapis.com
 secretmanager.googleapis.com
 iamcredentials.googleapis.com
 iam.googleapis.com
+recaptchaenterprise.googleapis.com
+compute.googleapis.com
 ```
 
-Runtime permissions:
+### 2. Runtime service-account IAM
 
-- `roles/datastore.user` for `backend-api-sa@deweb-preview1.iam.gserviceaccount.com` on project `deweb-preview1`.
-- `roles/storage.objectUser` for the runtime service account on `gs://darshanent_catalog_dir`.
-- `roles/storage.objectUser` for the runtime service account on `gs://darshanent-thumbnail-dir`.
-- `roles/secretmanager.secretAccessor` for the runtime service account on `BACKEND_ADMIN_TOKEN`.
-- `roles/iam.serviceAccountTokenCreator` for the runtime service account on itself, supporting signed Cloud Storage URLs.
+The runtime service account needs:
 
-## Deployment Runbook
+- `roles/datastore.user` on the project;
+- `roles/storage.objectUser` on both catalog buckets;
+- `roles/iam.serviceAccountTokenCreator` on itself for signed GCS URLs;
+- `roles/secretmanager.secretAccessor` on:
+  - `BUSINESS_UI_CSRF_SECRET`;
+  - `BACKEND_ADMIN_TOKEN` only for the dedicated admin runtime identity.
 
-Run these commands from the backend repository root:
+The deployer needs permission to deploy Cloud Run services and
+`roles/iam.serviceAccountUser` on the runtime service account.
+
+The current admin script uses the public runtime service account. Replace it
+with a dedicated admin runtime identity before treating the services as a
+strict IAM boundary.
+
+Do not configure `GOOGLE_APPLICATION_CREDENTIALS` on Cloud Run. Cloud Run uses
+the attached service account.
+
+### 3. Secret Manager
+
+Create strong independent values:
+
+```text
+BUSINESS_UI_CSRF_SECRET
+BACKEND_ADMIN_TOKEN
+```
+
+`BUSINESS_UI_CSRF_SECRET` must contain at least 32 characters.
+
+Do not put secret values in:
+
+- Git;
+- frontend environment variables;
+- Postman collection files;
+- Cloud Run plain-text environment variables;
+- deployment documentation.
+
+### 4. Google authentication
+
+- Configure the production web OAuth client ID used by the scripts.
+- Add `https://business.darshanent.co.in` to Authorized JavaScript Origins.
+- Configure `BUSINESS_UI_ALLOWED_GOOGLE_EMAILS` with only dashboard
+  administrators.
+- Require two-step verification for those accounts.
+
+### 5. reCAPTCHA Enterprise
+
+- Create a website key restricted to `darshanent.co.in`.
+- Enable the reCAPTCHA Enterprise API.
+- Provide the site key to:
+  - the public frontend build;
+  - `RECAPTCHA_ENTERPRISE_SITE_KEY` when deploying `delta-backend`.
+- Ensure the runtime service account can create assessments.
+
+### 6. Firestore TTL
+
+Enable TTL for:
+
+```text
+business_sessions.expires_at
+message_rate_limits.expires_at
+```
+
+### 7. Load balancer and DNS
+
+Before deploying the hardened public service:
+
+1. Reserve a global IP.
+2. Create the Google-managed certificate for `darshanent.co.in`.
+3. Create an `asia-south1` serverless NEG for `delta-backend`.
+4. Route `/api` and `/api/*` to the backend service containing that NEG.
+5. Route other paths to the public UI backend.
+6. Point `darshanent.co.in` DNS to the load-balancer IP.
+7. Attach Cloud Armor policies.
+8. Verify that `/api/health` reaches Cloud Run before disabling the default
+   Cloud Run URL.
+
+Verification must inspect JSON, not only HTTP status. Firebase currently returns
+the SPA HTML with status `200` for unknown `/api` paths.
+
+Correct:
+
+```bash
+curl --fail --silent https://darshanent.co.in/api/health |
+  jq -e '.status == "ok"'
+```
+
+Incorrect:
+
+```bash
+curl --head https://darshanent.co.in/api/health
+```
+
+An HTTP `200` alone does not prove that the backend received the request.
+
+### 8. Admin-service IAM
+
+After creating `delta-backend-admin`, grant `roles/run.invoker` only to approved
+operator user accounts or groups. Do not grant it to `allUsers`.
+
+## Routine deployment runbook
+
+### 1. Review the source being deployed
+
+The scripts deploy the current local directory, including uncommitted files.
 
 ```bash
 cd /Users/darshankapadiya/Developer/delta/delta-backend
+git status --short
+git diff --check
 ```
 
-### 1. Set Deployment Values
+Commit or intentionally review every local change before production deployment.
 
-```bash
-export PROJECT_ID="deweb-preview1"
-export REGION="asia-south1"
-export SERVICE_NAME="delta-backend"
-export FRONTEND_URL="https://darshanent.co.in"
-
-export PRIVATE_BUCKET="darshanent_catalog_dir"
-export PUBLIC_BUCKET="darshanent-thumbnail-dir"
-export FIRESTORE_DATABASE_ID="client-message-db"
-export GOOGLE_CLIENT_ID="157686675107-rg7sc0uq9gb8c037fm4a7lqv2em10sk9.apps.googleusercontent.com"
-
-export RUN_SA="backend-api-sa@deweb-preview1.iam.gserviceaccount.com"
-```
-
-### 2. Authenticate GCP CLI
-
-Use a deployer account that can enable services, manage Cloud Run, attach the runtime service account, write IAM policy bindings, create/read Secret Manager secrets, and run Cloud Build.
-
-```bash
-gcloud auth login
-gcloud auth application-default login
-gcloud config set project "$PROJECT_ID"
-gcloud config set run/region "$REGION"
-```
-
-Local development may continue using:
-
-```bash
-export GOOGLE_APPLICATION_CREDENTIALS="/Users/darshankapadiya/.gcp/catalog-api-sa.json"
-```
-
-Do not deploy that value to Cloud Run.
-
-### 3. Enable Required APIs
-
-```bash
-gcloud services enable \
-  run.googleapis.com \
-  cloudbuild.googleapis.com \
-  artifactregistry.googleapis.com \
-  firestore.googleapis.com \
-  storage.googleapis.com \
-  secretmanager.googleapis.com \
-  iamcredentials.googleapis.com \
-  iam.googleapis.com
-```
-
-### 4. Confirm Runtime Service Account
-
-```bash
-gcloud iam service-accounts describe "$RUN_SA"
-```
-
-Expected service account:
-
-```txt
-backend-api-sa@deweb-preview1.iam.gserviceaccount.com
-```
-
-If the deployer account cannot attach this service account to Cloud Run, grant the deployer `roles/iam.serviceAccountUser` on this service account.
-
-### 5. Grant Runtime Permissions
-
-Firestore access:
-
-```bash
-gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:$RUN_SA" \
-  --role="roles/datastore.user"
-```
-
-Private catalog bucket access:
-
-```bash
-gcloud storage buckets add-iam-policy-binding "gs://$PRIVATE_BUCKET" \
-  --member="serviceAccount:$RUN_SA" \
-  --role="roles/storage.objectUser"
-```
-
-Public catalog asset bucket access:
-
-```bash
-gcloud storage buckets add-iam-policy-binding "gs://$PUBLIC_BUCKET" \
-  --member="serviceAccount:$RUN_SA" \
-  --role="roles/storage.objectUser"
-```
-
-Secret Manager access for `BACKEND_ADMIN_TOKEN`:
-
-```bash
-gcloud secrets add-iam-policy-binding BACKEND_ADMIN_TOKEN \
-  --member="serviceAccount:$RUN_SA" \
-  --role="roles/secretmanager.secretAccessor"
-```
-
-Signed Cloud Storage URL support:
-
-```bash
-gcloud iam service-accounts add-iam-policy-binding "$RUN_SA" \
-  --member="serviceAccount:$RUN_SA" \
-  --role="roles/iam.serviceAccountTokenCreator"
-```
-
-### 6. Store Admin Token In Secret Manager
-
-Use the real `BACKEND_ADMIN_TOKEN` value, not a local placeholder.
-
-```bash
-read -s BACKEND_ADMIN_TOKEN
-printf "%s" "$BACKEND_ADMIN_TOKEN" | gcloud secrets create BACKEND_ADMIN_TOKEN --data-file=- \
-  || printf "%s" "$BACKEND_ADMIN_TOKEN" | gcloud secrets versions add BACKEND_ADMIN_TOKEN --data-file=-
-unset BACKEND_ADMIN_TOKEN
-```
-
-### 7. Optional Local Build Check
+### 2. Verify locally
 
 ```bash
 npm install
+npm run lint
+npm test -- --runInBand
 npm run build
 ```
 
-The local machine may warn if its Node version is not `24.x`; Cloud Run buildpacks use the runtime specified by `package.json`.
-
-### 8. Deploy Backend API To Cloud Run
+For a full release, also run:
 
 ```bash
-gcloud run deploy "$SERVICE_NAME" \
-  --source . \
-  --region "$REGION" \
-  --service-account "$RUN_SA" \
-  --allow-unauthenticated \
-  --max-instances=1 \
-  --memory=2Gi \
-  --cpu=1 \
-  --timeout=300 \
-  --set-env-vars "NODE_ENV=production,HOST=0.0.0.0,FRONTEND_ORIGIN=$FRONTEND_URL,FRONTEND_BASE_URL=$FRONTEND_URL,GCS_CATALOG_BUCKET=$PRIVATE_BUCKET,GCS_CATALOG_PREFIX=,GCS_CATALOG_PUBLIC_ASSET_BUCKET=$PUBLIC_BUCKET,CATALOG_PUBLIC_ASSET_BASE_URL=https://storage.googleapis.com/$PUBLIC_BUCKET,CATALOG_SIGNED_URL_TTL_SECONDS=900,GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID,FIRESTORE_DATABASE_ID=$FIRESTORE_DATABASE_ID" \
-  --set-secrets "BACKEND_ADMIN_TOKEN=BACKEND_ADMIN_TOKEN:latest"
+BUSINESS_UI_ALLOWED_GOOGLE_EMAILS="test-admin@gmail.com" \
+BUSINESS_UI_CSRF_SECRET="12345678901234567890123456789012" \
+BUSINESS_UI_GOOGLE_CLIENT_ID="test-client-id" \
+FIRESTORE_DATABASE_ID="test" \
+npm run test:e2e -- --runInBand
 ```
 
-For Console UI deployment, choose this service account in Cloud Run security settings:
-
-```txt
-backend-api-sa@deweb-preview1.iam.gserviceaccount.com
-```
-
-Do not add `GOOGLE_APPLICATION_CREDENTIALS` in Cloud Run environment variables.
-
-## Verification
-
-Current deployed URL:
+### 3. Authenticate the deployer
 
 ```bash
-export API_URL="https://delta-backend-157686675107.asia-south1.run.app"
+gcloud auth login
+gcloud auth list
+gcloud config set project deweb-preview1
+gcloud config set run/region asia-south1
 ```
 
-Smoke checks:
+Application Default Credentials are not required merely to run the deployment
+scripts. Do not confuse local application credentials with the Cloud Run
+runtime service account.
+
+### 4. Set deployment inputs
 
 ```bash
-curl -i "$API_URL/api/health"
-curl -i "$API_URL/api"
-curl -i "$API_URL/api/catalog/all"
+export BUSINESS_UI_ALLOWED_GOOGLE_EMAILS="admin1@gmail.com,admin2@gmail.com"
+export RECAPTCHA_ENTERPRISE_SITE_KEY="<production-site-key>"
+export RECAPTCHA_ENTERPRISE_PROJECT_ID="deweb-preview1"
 ```
 
-Expected results:
+### 5. Deploy the public/business service
 
-- `/api/health` returns `200` with backend health JSON.
-- `/api` returns the endpoint index.
-- `/api/catalog/all` returns catalog JSON and not `503`.
-
-Check logs if verification fails:
+Only after the load-balancer `/api` route returns backend JSON:
 
 ```bash
-gcloud run services logs read "$SERVICE_NAME" \
-  --region "$REGION" \
+curl --fail --silent https://darshanent.co.in/api/health |
+  jq -e '.status == "ok"'
+
+npm run deploy:gcp
+```
+
+### 6. Deploy the internal admin service
+
+Run this for the first admin deployment and whenever internal/shared backend
+code changes:
+
+```bash
+npm run deploy:gcp:admin
+```
+
+Then grant or confirm operator invocation permission:
+
+```bash
+gcloud run services add-iam-policy-binding delta-backend-admin \
+  --project deweb-preview1 \
+  --region asia-south1 \
+  --member="user:approved-operator@example.com" \
+  --role="roles/run.invoker"
+```
+
+Replace the example operator with the real approved identity.
+
+## Post-deployment verification
+
+### Public/business service
+
+```bash
+curl --fail --silent https://darshanent.co.in/api/health |
+  jq -e '.status == "ok"'
+
+curl --fail --silent https://darshanent.co.in/api |
+  jq -e '.base_path == "/api"'
+```
+
+Confirm the service boundary:
+
+```bash
+curl -i https://darshanent.co.in/api/internal/messages
+```
+
+Expected: `404`.
+
+Confirm the direct URL is disabled:
+
+```bash
+gcloud run services describe delta-backend \
+  --project deweb-preview1 \
+  --region asia-south1 \
+  --format="yaml(metadata.annotations,status.url,status.latestReadyRevisionName)"
+```
+
+### Admin service
+
+Obtain its URL:
+
+```bash
+ADMIN_URL="$(
+  gcloud run services describe delta-backend-admin \
+    --project deweb-preview1 \
+    --region asia-south1 \
+    --format='value(status.url)'
+)"
+```
+
+Create an IAM identity token:
+
+```bash
+IDENTITY_TOKEN="$(gcloud auth print-identity-token)"
+```
+
+This user-token form is appropriate for an approved human operator using
+`gcloud`. For production automation, impersonate a dedicated service account
+and request an audience-restricted token for `$ADMIN_URL`.
+
+Read the second factor without printing it:
+
+```bash
+read -s BACKEND_ADMIN_TOKEN
+```
+
+Call the internal health endpoint with IAM:
+
+```bash
+curl --fail --silent \
+  -H "Authorization: Bearer $IDENTITY_TOKEN" \
+  "$ADMIN_URL/api/health" |
+  jq -e '.status == "ok"'
+```
+
+Call an internal route with both factors:
+
+```bash
+curl --fail --silent \
+  -H "Authorization: Bearer $IDENTITY_TOKEN" \
+  -H "x-backend-admin-token: $BACKEND_ADMIN_TOKEN" \
+  "$ADMIN_URL/api/internal/messages" |
+  jq -e '.messages | type == "array"'
+
+unset IDENTITY_TOKEN BACKEND_ADMIN_TOKEN
+```
+
+### Logs
+
+```bash
+gcloud run services logs read delta-backend \
+  --project deweb-preview1 \
+  --region asia-south1 \
+  --limit=100
+
+gcloud run services logs read delta-backend-admin \
+  --project deweb-preview1 \
+  --region asia-south1 \
   --limit=100
 ```
 
-Confirm active revision and runtime identity:
+## Rollback
+
+List revisions:
 
 ```bash
-gcloud run services describe "$SERVICE_NAME" \
-  --region "$REGION" \
-  --format="value(status.latestReadyRevisionName,status.traffic[0].percent,spec.template.spec.serviceAccountName)"
+gcloud run revisions list \
+  --project deweb-preview1 \
+  --region asia-south1 \
+  --service delta-backend
 ```
+
+Send all traffic to a known-good revision:
+
+```bash
+gcloud run services update-traffic delta-backend \
+  --project deweb-preview1 \
+  --region asia-south1 \
+  --to-revisions="<known-good-revision>=100"
+```
+
+Use the same commands with `delta-backend-admin` when rolling back the admin
+service.
+
+Rolling back Cloud Run does not roll back:
+
+- secrets;
+- IAM policy;
+- DNS;
+- load-balancer configuration;
+- Firestore TTL;
+- frontend deployments.
+
+Treat those as separate operational changes.
+
+## Common failures
+
+### `delta-backend` does not exist
+
+`deploy-gcp.sh` intentionally refuses to create it. Verify project and region.
+
+### `/api/health` returns HTML
+
+The load balancer/Firebase route is serving the SPA. Do not deploy the hardened
+public service yet. Fix `/api` URL-map routing.
+
+### Google login returns `origin_mismatch`
+
+Add `https://business.darshanent.co.in` to the OAuth client's Authorized
+JavaScript Origins.
+
+### Business login returns `403`
+
+Check:
+
+- normalized `BUSINESS_UI_ALLOWED_GOOGLE_EMAILS`;
+- Workspace `hd` claim requirements;
+- `business_users/{sub}` status and subject binding;
+- the exact `https://business.darshanent.co.in` request origin.
+
+### Catalog returns `503`
+
+Check:
+
+- Cloud Run logs;
+- attached runtime service account;
+- both bucket IAM policies;
+- `roles/iam.serviceAccountTokenCreator` for signed URLs;
+- Firestore/GCS environment configuration;
+- Node 24 dependency overrides.
+
+### Admin service returns `403` before NestJS
+
+The caller is missing Cloud Run `roles/run.invoker` or a valid identity token.
+
+### Admin service returns `401` from NestJS
+
+IAM succeeded, but `x-backend-admin-token` is missing or incorrect.

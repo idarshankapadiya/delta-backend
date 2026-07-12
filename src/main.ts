@@ -1,17 +1,15 @@
 import { NestFactory } from '@nestjs/core';
 import multipart from '@fastify/multipart';
+import cookie from '@fastify/cookie';
 import {
   FastifyAdapter,
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
-import {
-  getAllowedFrontendOrigins,
-  getHttpHost,
-  getHttpPort,
-} from './config/http.config';
+import { getHttpHost, getHttpPort } from './config/http.config';
 import { getCatalogUploadMaxBytes } from './config/catalog.config';
+import { getCorsOrigins } from './config/origin.config';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -26,13 +24,14 @@ async function bootstrap() {
       fileSize: getCatalogUploadMaxBytes(),
     },
   });
+  await app.register(cookie);
 
   app.enableCors({
     origin: (
       origin: string | undefined,
       callback: (error: Error | null, allow: boolean) => void,
     ) => {
-      if (!origin || getAllowedFrontendOrigins().includes(origin)) {
+      if (!origin || getCorsOrigins().includes(origin)) {
         callback(null, true);
         return;
       }

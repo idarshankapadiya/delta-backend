@@ -1,12 +1,16 @@
 {
   "info": {
     "name": "Delta Backend Catalog GCS Flow",
-    "description": "Postman collection for the current slug-based catalog API. PDFs stay private behind signed URLs; thumbnails are public URLs from darshanent-thumbnail-dir returned in catalog JSON. POST /api/catalog/access is inquiry-only; Google access, OTP verification, and the temporary master OTP shortcut are the cookie-granting flows. GET /api/catalog/access/me restores the current catalog_access session for frontend header state. Do not put GOOGLE_APPLICATION_CREDENTIALS or service account JSON content in Postman. Do not use legacy document-id payloads for PDF signing. Contact messages use POST /api/message for public writes and GET /api/message with x-backend-admin-token for admin reads.",
+    "description": "Postman collection for the name-derived slug catalog API. Admin create/update requests send company_name, optional category_name, and document_name; writable slug fields and display_name are unsupported. PDFs stay private behind signed URLs, while thumbnails use public company/optional-category paths in darshanent-thumbnail-dir. document_id remains stable across document updates. POST /api/catalog/access is inquiry-only; Google access, OTP verification, and the temporary master OTP shortcut grant the catalog_access cookie. Do not put GOOGLE_APPLICATION_CREDENTIALS or service account JSON content in Postman.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     {
       "key": "base_url",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "admin_base_url",
       "value": "http://localhost:3000"
     },
     {
@@ -34,20 +38,40 @@
       "value": "replace-with-BACKEND_ADMIN_TOKEN"
     },
     {
+      "key": "operator_identity_token",
+      "value": "replace-with-Cloud-Run-operator-identity-token"
+    },
+    {
+      "key": "recaptcha_token",
+      "value": "replace-with-reCAPTCHA-Enterprise-token"
+    },
+    {
       "key": "company_slug",
-      "value": "schneider"
+      "value": "postman-test-company"
+    },
+    {
+      "key": "company_name",
+      "value": "Postman Test Company"
+    },
+    {
+      "key": "renamed_company_name",
+      "value": "Postman Test Company Renamed"
     },
     {
       "key": "category_slug",
-      "value": "industrial-automation"
+      "value": "postman-test-category"
+    },
+    {
+      "key": "category_name",
+      "value": "Postman Test Category"
     },
     {
       "key": "document_slug",
-      "value": "plc-catalog"
+      "value": "postman-test-catalog"
     },
     {
-      "key": "display_name",
-      "value": "PLC Catalog"
+      "key": "document_name",
+      "value": "Postman Test Catalog"
     },
     {
       "key": "catalog_pdf_path",
@@ -129,14 +153,13 @@
                   "",
                   "  pm.expect(endpointKeys).to.include('GET /api/health');",
                   "  pm.expect(endpointKeys).to.include('POST /api/message');",
-                  "  pm.expect(endpointKeys).to.include('GET /api/message');",
+                  "  pm.expect(endpointKeys).to.include('GET /api/business/messages');",
+                  "  pm.expect(endpointKeys).to.include('GET /api/business/catalog/all');",
                   "  pm.expect(endpointKeys).to.include('GET /api/catalog/all');",
                   "  pm.expect(endpointKeys).to.include('GET /api/catalog/access/me');",
                   "  pm.expect(endpointKeys).to.include('POST /api/catalog/access/request-otp');",
                   "  pm.expect(endpointKeys).to.include('POST /api/catalog/documents/access');",
-                  "  pm.expect(endpointKeys).to.include('POST /api/catalog/documents');",
-                  "  pm.expect(endpointKeys).to.include('PUT /api/catalog/documents/:document_id');",
-                  "  pm.expect(endpointKeys).to.include('DELETE /api/catalog/documents/:document_id');",
+                  "  pm.expect(endpointKeys).to.include('POST/PUT/DELETE /api/business/catalog/**');",
                   "});"
                 ]
               }
@@ -177,6 +200,9 @@
                   "  });",
                   "  return categoryDocuments.concat(company.documents || []);",
                   "}",
+                  "function slugifyName(value) {",
+                  "  return String(value || '').trim().replace(/\\s+/g, ' ').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');",
+                  "}",
                   "",
                   "pm.test('thumbnail URLs use the public thumbnail bucket', function () {",
                   "  const thumbnailUrls = (json.companies || []).flatMap(function (company) {",
@@ -192,21 +218,33 @@
                   "  });",
                   "});",
                   "",
-                  "pm.test('company and category display labels are included for UI rendering', function () {",
+                  "pm.test('GET returns the name-derived company/category/document structure', function () {",
                   "  (json.companies || []).forEach(function (company) {",
                   "    pm.expect(company.company_name).to.be.a('string');",
+                  "    pm.expect(company.company_slug).to.eql(slugifyName(company.company_name));",
                   "",
                   "    (company.categories || []).forEach(function (category) {",
                   "      pm.expect(category.category_name).to.be.a('string');",
+                  "      pm.expect(category.category_slug).to.eql(slugifyName(category.category_name));",
                   "",
                   "      (category.documents || []).forEach(function (document) {",
                   "        pm.expect(document.company_name).to.be.a('string');",
                   "        pm.expect(document.category_name).to.be.a('string');",
+                  "        pm.expect(document.document_name).to.be.a('string');",
+                  "        pm.expect(document.document_slug).to.eql(slugifyName(document.document_name));",
+                  "        pm.expect(document).to.not.have.property('display_name');",
+                  "        pm.expect(document.thumbnail_url).to.include('/' + company.company_slug + '/' + category.category_slug + '/');",
                   "      });",
                   "    });",
                   "",
                   "    (company.documents || []).forEach(function (document) {",
                   "      pm.expect(document.company_name).to.be.a('string');",
+                  "      pm.expect(document.document_name).to.be.a('string');",
+                  "      pm.expect(document.document_slug).to.eql(slugifyName(document.document_name));",
+                  "      pm.expect(document).to.not.have.property('display_name');",
+                  "      pm.expect(document).to.not.have.property('category_name');",
+                  "      pm.expect(document).to.not.have.property('category_slug');",
+                  "      pm.expect(document.thumbnail_url).to.include('/' + company.company_slug + '/');",
                   "    });",
                   "  });",
                   "});",
@@ -366,10 +404,10 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Postman Contact\",\n  \"mobile\": \"9999999999\",\n  \"email\": \"postman-contact@example.com\",\n  \"message\": \"Testing contact message create from Postman\"\n}"
+              "raw": "{\n  \"name\": \"Postman Contact\",\n  \"mobile\": \"9999999999\",\n  \"email\": \"postman-contact@example.com\",\n  \"message\": \"Testing contact message create from Postman\",\n  \"captcha_token\": \"{{recaptcha_token}}\"\n}"
             },
             "url": "{{base_url}}/api/message",
-            "description": "Creates one contact message in Firestore database client-message-db, collection contact_messages. Required body fields: name, mobile, email, message. Adds server-side created_at."
+            "description": "Creates one contact message. Requires the exact public Origin and a fresh reCAPTCHA Enterprise contact_message token."
           }
         },
         {
@@ -399,14 +437,18 @@
               {
                 "key": "x-backend-admin-token",
                 "value": "{{BACKEND_ADMIN_TOKEN}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operator_identity_token}}"
               }
             ],
-            "url": "{{base_url}}/api/message",
-            "description": "Returns contact messages ordered newest first. Requires x-backend-admin-token: {{BACKEND_ADMIN_TOKEN}}."
+            "url": "{{admin_base_url}}/api/internal/messages",
+            "description": "Returns contact messages through the IAM-protected admin service. Requires an operator identity token and x-backend-admin-token."
           }
         }
       ],
-      "description": "Firestore-backed contact form message flow. POST /api/message writes customer messages without OTP/email/phone verification. GET /api/message lists messages newest first and requires x-backend-admin-token with BACKEND_ADMIN_TOKEN."
+      "description": "POST /api/message is CAPTCHA-protected public submission. Message reads use the business dashboard or the IAM-protected /api/internal/messages operator route."
     },
     {
       "name": "Catalog Access And PDF Signing",
@@ -839,6 +881,20 @@
           "name": "Create Catalog Document",
           "event": [
             {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "function slugifyName(value) {",
+                  "  return String(value || '').trim().replace(/\\s+/g, ' ').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');",
+                  "}",
+                  "pm.collectionVariables.set('company_slug', slugifyName(pm.collectionVariables.get('company_name')));",
+                  "pm.collectionVariables.set('category_slug', slugifyName(pm.collectionVariables.get('category_name')));",
+                  "pm.collectionVariables.set('document_slug', slugifyName(pm.collectionVariables.get('document_name')));"
+                ]
+              }
+            },
+            {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
@@ -849,11 +905,21 @@
                   "",
                   "const json = pm.response.json();",
                   "pm.collectionVariables.set('document_id', json.document_id);",
+                  "pm.collectionVariables.set('company_slug', json.company_slug);",
+                  "pm.collectionVariables.set('category_slug', json.category_slug);",
+                  "pm.collectionVariables.set('document_slug', json.document_slug);",
                   "if (json.thumbnail_url) pm.collectionVariables.set('thumbnail_url', json.thumbnail_url);",
                   "",
-                  "pm.test('create response uses uploaded PDF filename and public document thumbnail bucket', function () {",
+                  "pm.test('create derives names/slugs and uses the category hierarchy', function () {",
                   "  pm.expect(json.document_id).to.be.a('string');",
-                  "  pm.expect(json.object_name).to.include(pm.collectionVariables.get('company_slug') + '/');",
+                  "  pm.expect(json.company_name).to.eql(pm.collectionVariables.get('company_name'));",
+                  "  pm.expect(json.company_slug).to.eql(pm.collectionVariables.get('company_slug'));",
+                  "  pm.expect(json.category_name).to.eql(pm.collectionVariables.get('category_name'));",
+                  "  pm.expect(json.category_slug).to.eql(pm.collectionVariables.get('category_slug'));",
+                  "  pm.expect(json.document_name).to.eql(pm.collectionVariables.get('document_name'));",
+                  "  pm.expect(json.document_slug).to.eql(pm.collectionVariables.get('document_slug'));",
+                  "  pm.expect(json).to.not.have.property('display_name');",
+                  "  pm.expect(json.object_name).to.include(json.company_slug + '/' + json.category_slug + '/');",
                   "  pm.expect(json.object_name).to.not.include('/current.pdf');",
                   "  pm.expect(json.file_name).to.be.a('string').and.match(/\\.pdf$/i);",
                   "  pm.expect(json.file_name).to.not.eql('current.pdf');",
@@ -870,29 +936,28 @@
               {
                 "key": "x-backend-admin-token",
                 "value": "{{BACKEND_ADMIN_TOKEN}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operator_identity_token}}"
               }
             ],
             "body": {
               "mode": "formdata",
               "formdata": [
                 {
-                  "key": "company_slug",
-                  "value": "{{company_slug}}",
+                  "key": "company_name",
+                  "value": "{{company_name}}",
                   "type": "text"
                 },
                 {
-                  "key": "category_slug",
-                  "value": "{{category_slug}}",
+                  "key": "category_name",
+                  "value": "{{category_name}}",
                   "type": "text"
                 },
                 {
-                  "key": "document_slug",
-                  "value": "{{document_slug}}",
-                  "type": "text"
-                },
-                {
-                  "key": "display_name",
-                  "value": "{{display_name}}",
+                  "key": "document_name",
+                  "value": "{{document_name}}",
                   "type": "text"
                 },
                 {
@@ -902,26 +967,34 @@
                 }
               ]
             },
-            "url": "{{base_url}}/api/catalog/documents"
+            "url": "{{admin_base_url}}/api/internal/catalog/documents"
           }
         },
         {
-          "name": "Update Catalog Document Metadata Only",
+          "name": "Update Catalog Document Name And Category",
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('metadata update succeeds', function () {",
+                  "pm.test('name/category update succeeds', function () {",
                   "  pm.expect([200,201]).to.include(pm.response.code);",
                   "});",
                   "",
                   "const json = pm.response.json();",
+                  "const expectedDocumentName = pm.collectionVariables.get('document_name') + ' Updated';",
+                  "const expectedDocumentSlug = expectedDocumentName.trim().replace(/\\s+/g, ' ').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');",
                   "",
-                  "pm.test('metadata-only update keeps the same document_id', function () {",
+                  "pm.test('name/category update derives slugs and keeps document_id', function () {",
                   "  pm.expect(json.document_id).to.eql(pm.collectionVariables.get('document_id'));",
-                  "});"
+                  "  pm.expect(json.document_name).to.eql(expectedDocumentName);",
+                  "  pm.expect(json.document_slug).to.eql(expectedDocumentSlug);",
+                  "  pm.expect(json.category_name).to.eql(pm.collectionVariables.get('category_name'));",
+                  "  pm.expect(json).to.not.have.property('display_name');",
+                  "});",
+                  "pm.collectionVariables.set('document_name', json.document_name);",
+                  "pm.collectionVariables.set('document_slug', json.document_slug);"
                 ]
               }
             }
@@ -932,24 +1005,28 @@
               {
                 "key": "x-backend-admin-token",
                 "value": "{{BACKEND_ADMIN_TOKEN}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operator_identity_token}}"
               }
             ],
             "body": {
               "mode": "formdata",
               "formdata": [
                 {
-                  "key": "category_slug",
-                  "value": "{{category_slug}}",
+                  "key": "category_name",
+                  "value": "{{category_name}}",
                   "type": "text"
                 },
                 {
-                  "key": "display_name",
-                  "value": "{{display_name}} Updated",
+                  "key": "document_name",
+                  "value": "{{document_name}} Updated",
                   "type": "text"
                 }
               ]
             },
-            "url": "{{base_url}}/api/catalog/documents/{{document_id}}"
+            "url": "{{admin_base_url}}/api/internal/catalog/documents/{{document_id}}"
           }
         },
         {
@@ -977,9 +1054,10 @@
                   "pm.collectionVariables.set('document_id', json.document_id);",
                   "if (json.thumbnail_url) pm.collectionVariables.set('thumbnail_url', json.thumbnail_url);",
                   "",
-                  "pm.test('replacement returns new document id and uploaded PDF filename', function () {",
+                  "pm.test('replacement keeps document id and returns uploaded PDF filename', function () {",
                   "  pm.expect(json.document_id).to.be.a('string');",
-                  "  pm.expect(json.document_id).to.not.eql(pm.collectionVariables.get('previous_document_id'));",
+                  "  pm.expect(json.document_id).to.eql(pm.collectionVariables.get('previous_document_id'));",
+                  "  pm.expect(json.document_name).to.eql(pm.collectionVariables.get('document_name'));",
                   "  pm.expect(json.object_name).to.not.include('/current.pdf');",
                   "  pm.expect(json.file_name).to.be.a('string').and.match(/\\.pdf$/i);",
                   "  pm.expect(json.file_name).to.not.eql('current.pdf');",
@@ -996,16 +1074,15 @@
               {
                 "key": "x-backend-admin-token",
                 "value": "{{BACKEND_ADMIN_TOKEN}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operator_identity_token}}"
               }
             ],
             "body": {
               "mode": "formdata",
               "formdata": [
-                {
-                  "key": "display_name",
-                  "value": "{{display_name}}",
-                  "type": "text"
-                },
                 {
                   "key": "file",
                   "type": "file",
@@ -1013,7 +1090,69 @@
                 }
               ]
             },
-            "url": "{{base_url}}/api/catalog/documents/{{document_id}}"
+            "url": "{{admin_base_url}}/api/internal/catalog/documents/{{document_id}}"
+          }
+        },
+        {
+          "name": "Update Catalog Company Name",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('previous_company_slug', pm.collectionVariables.get('company_slug'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('company update succeeds', function () {",
+                  "  pm.expect([200, 201]).to.include(pm.response.code);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "function slugifyName(value) {",
+                  "  return String(value || '').trim().replace(/\\s+/g, ' ').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');",
+                  "}",
+                  "",
+                  "pm.test('company update derives slug and moves the catalog prefix', function () {",
+                  "  pm.expect(json.previous_company_slug).to.eql(pm.collectionVariables.get('previous_company_slug'));",
+                  "  pm.expect(json.company_name).to.eql(pm.collectionVariables.get('renamed_company_name'));",
+                  "  pm.expect(json.company_slug).to.eql(slugifyName(json.company_name));",
+                  "  pm.expect(json.moved_document_count).to.be.at.least(1);",
+                  "  pm.expect(json.merged).to.be.a('boolean');",
+                  "});",
+                  "pm.collectionVariables.set('company_name', json.company_name);",
+                  "pm.collectionVariables.set('company_slug', json.company_slug);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-backend-admin-token",
+                "value": "{{BACKEND_ADMIN_TOKEN}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operator_identity_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"company_name\": \"{{renamed_company_name}}\"\n}"
+            },
+            "url": "{{admin_base_url}}/api/internal/catalog/companies/{{company_slug}}"
           }
         },
         {
@@ -1037,9 +1176,13 @@
               {
                 "key": "x-backend-admin-token",
                 "value": "{{BACKEND_ADMIN_TOKEN}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operator_identity_token}}"
               }
             ],
-            "url": "{{base_url}}/api/catalog/documents/{{document_id}}"
+            "url": "{{admin_base_url}}/api/internal/catalog/documents/{{document_id}}"
           }
         }
       ]
@@ -1064,8 +1207,14 @@
           ],
           "request": {
             "method": "GET",
-            "url": "{{base_url}}/api/message",
-            "description": "GET /api/message must reject requests without x-backend-admin-token."
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operator_identity_token}}"
+              }
+            ],
+            "url": "{{admin_base_url}}/api/internal/messages",
+            "description": "The internal messages route must reject an IAM-approved request without x-backend-admin-token."
           }
         },
         {
@@ -1094,6 +1243,12 @@
           ],
           "request": {
             "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operator_identity_token}}"
+              }
+            ],
             "header": [
               {
                 "key": "Content-Type",
@@ -1227,18 +1382,13 @@
               "mode": "formdata",
               "formdata": [
                 {
-                  "key": "company_slug",
-                  "value": "{{company_slug}}",
+                  "key": "company_name",
+                  "value": "{{company_name}}",
                   "type": "text"
                 },
                 {
-                  "key": "document_slug",
-                  "value": "{{document_slug}}",
-                  "type": "text"
-                },
-                {
-                  "key": "display_name",
-                  "value": "{{display_name}}",
+                  "key": "document_name",
+                  "value": "{{document_name}}",
                   "type": "text"
                 },
                 {
@@ -1248,7 +1398,7 @@
                 }
               ]
             },
-            "url": "{{base_url}}/api/catalog/documents"
+            "url": "{{admin_base_url}}/api/internal/catalog/documents"
           }
         }
       ]

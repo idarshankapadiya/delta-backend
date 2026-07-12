@@ -10,6 +10,9 @@
   },
   "scripts": {
     "build": "nest build",
+    "catalog:migrate-metadata": "ts-node src/catalog/migrate-catalog-metadata.ts",
+    "deploy:gcp": "bash scripts/deploy-gcp.sh",
+    "deploy:gcp:admin": "bash scripts/deploy-gcp-admin.sh",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start-backend": "nest start",
     "start-backend:dev": "nest start --watch",
@@ -24,6 +27,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-sesv2": "^3.1072.0",
+    "@fastify/cookie": "^11.0.2",
     "@fastify/cors": "^11.2.0",
     "@fastify/multipart": "^10.0.0",
     "@google-cloud/firestore": "^8.6.0",
@@ -31,9 +35,7 @@
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.3",
     "@nestjs/core": "^11.0.1",
-    "@nestjs/platform-express": "^11.0.1",
     "@nestjs/platform-fastify": "^11.1.13",
-    "@nestjs/swagger": "^11.2.6",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.3",
     "google-auth-library": "^10.7.0",
@@ -41,10 +43,11 @@
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "sharp": "^0.35.1",
-    "swagger-ui-express": "^5.0.1",
     "ulid": "^3.0.2"
   },
   "overrides": {
+    "multer": "^2.2.0",
+    "uuid": "^11.1.1",
     "@google-cloud/storage": {
       "gaxios": "^7.1.5",
       "gcp-metadata": "^8.1.3"

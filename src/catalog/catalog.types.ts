@@ -34,9 +34,11 @@ export interface CatalogDocumentRevision {
   content_type: string;
   updated_at?: string;
   company_slug?: string;
+  company_name?: string;
   category_slug?: string;
+  category_name?: string;
   document_slug?: string;
-  display_name?: string;
+  document_name?: string;
   thumbnail_url?: string;
 }
 
@@ -47,9 +49,18 @@ export interface CatalogDocumentSummary {
   category_slug?: string;
   category_name?: string;
   document_slug: string;
-  display_name: string;
+  document_name: string;
   thumbnail_url?: string;
   metadata?: CatalogMetadata;
+}
+
+export interface CatalogCompanyUpdateResult {
+  ok: true;
+  previous_company_slug: string;
+  company_slug: string;
+  company_name: string;
+  moved_document_count: number;
+  merged: boolean;
 }
 
 export interface CatalogNavigationCategory {

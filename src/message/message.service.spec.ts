@@ -1,17 +1,25 @@
 import { Timestamp } from '@google-cloud/firestore';
 import { MessageService } from './message.service';
 
+interface StoredMessage {
+  created_at: Timestamp;
+  email: string;
+  message: string;
+  mobile: string;
+  name: string;
+}
+
 describe('MessageService', () => {
   let service: MessageService;
   let collection: {
-    add: jest.Mock;
+    add: jest.Mock<Promise<{ id: string }>, [StoredMessage]>;
     orderBy: jest.Mock;
     get: jest.Mock;
   };
 
   beforeEach(() => {
     collection = {
-      add: jest.fn(),
+      add: jest.fn<Promise<{ id: string }>, [StoredMessage]>(),
       orderBy: jest.fn(),
       get: jest.fn(),
     };
@@ -31,32 +39,34 @@ describe('MessageService', () => {
   it('stores a contact message with server-side created_at', async () => {
     collection.add.mockResolvedValue({ id: 'message-1' });
 
-    await expect(
-      service.createMessage({
-        name: ' Customer ',
-        mobile: ' 9999999999 ',
-        email: ' CUSTOMER@EXAMPLE.COM ',
-        message: ' Hello ',
-      }),
-    ).resolves.toMatchObject({
+    const result = await service.createMessage({
+      name: ' Customer ',
+      mobile: ' 9999999999 ',
+      email: ' CUSTOMER@EXAMPLE.COM ',
+      message: ' Hello ',
+    });
+
+    expect(result).toMatchObject({
       ok: true,
       id: 'message-1',
       name: 'Customer',
       mobile: '9999999999',
       email: 'customer@example.com',
       message: 'Hello',
-      created_at: expect.any(String),
     });
+    expect(typeof result.created_at).toBe('string');
 
-    expect(collection.add).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'Customer',
-        mobile: '9999999999',
-        email: 'customer@example.com',
-        message: 'Hello',
-        created_at: expect.any(Timestamp),
-      }),
-    );
+    expect(collection.add).toHaveBeenCalledTimes(1);
+    const storedMessage: unknown = collection.add.mock.calls[0]?.[0];
+    expect(storedMessage).toMatchObject({
+      name: 'Customer',
+      mobile: '9999999999',
+      email: 'customer@example.com',
+      message: 'Hello',
+    });
+    expect(
+      (storedMessage as { created_at?: unknown }).created_at,
+    ).toBeInstanceOf(Timestamp);
   });
 
   it('returns messages newest first from Firestore order', async () => {

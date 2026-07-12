@@ -1,27 +1,35 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   InternalServerErrorException,
   Logger,
   NotFoundException,
   ServiceUnavailableException,
-  ConflictException,
 } from '@nestjs/common';
 import { Storage } from '@google-cloud/storage';
 import sharp from 'sharp';
 import { ulid } from 'ulid';
 import {
+  formatCatalogLabel,
+  normalizeCatalogName,
+  slugifyCatalogName,
+} from './catalog-name.utils';
+import {
   CatalogAction,
+  CatalogCompanyUpdateResult,
+  CatalogDocumentRevision,
   CatalogDocumentSummary,
   CatalogLibraryResponse,
+  CatalogMetadata,
   CatalogNavigationCategory,
   CatalogNavigationCompany,
   CatalogNavigationResponse,
-  CatalogMetadata,
   CatalogStorageObject,
-  CatalogDocumentRevision,
   SignedDocumentAccess,
 } from './catalog.types';
+
+type GcsFile = ReturnType<ReturnType<Storage['bucket']>['file']>;
 
 interface DocumentLookup {
   objectName: string;
@@ -34,6 +42,7 @@ interface CatalogDocumentRecord extends CatalogDocumentSummary {
   object_name: string;
   relative_name: string;
   original_file_name: string;
+  uploaded_at?: string;
 }
 
 interface CatalogDocumentSelection {
@@ -45,17 +54,16 @@ interface CatalogDocumentSelection {
 interface CatalogDocumentUploadInput {
   pdf: Buffer;
   uploadedFileName: string;
-  companySlug: string;
-  categorySlug?: string;
-  documentSlug: string;
-  displayName?: string;
+  companyName: string;
+  categoryName?: string;
+  documentName: string;
 }
 
 interface CatalogDocumentUpdateInput {
   pdf?: Buffer;
   uploadedFileName?: string;
-  categorySlug?: string;
-  displayName?: string;
+  categoryName?: string;
+  documentName?: string;
 }
 
 interface GcsObjectMetadata {
@@ -66,21 +74,25 @@ interface GcsObjectMetadata {
   metadata?: Record<string, string>;
 }
 
+interface CatalogNameIdentity {
+  name: string;
+  slug: string;
+}
+
 @Injectable()
 export class CatalogService {
   private readonly logger = new Logger(CatalogService.name);
   private readonly storage = new Storage();
 
   async getCatalogAll(): Promise<CatalogNavigationResponse> {
-    const objects = await this.listPdfObjects();
-    return this.buildCatalogNavigation(objects);
+    return this.buildCatalogNavigation(await this.listPdfObjects());
   }
 
   async getCatalogLibrary(
     companySlugs: string[],
   ): Promise<CatalogLibraryResponse> {
     const requestedSlugs = new Set(
-      companySlugs.map((slug) => this.slugify(slug)).filter(Boolean),
+      companySlugs.map(slugifyCatalogName).filter(Boolean),
     );
     const catalog = await this.getCatalogAll();
 
@@ -99,8 +111,7 @@ export class CatalogService {
   async documentSelectionExists(
     selection: CatalogDocumentSelection,
   ): Promise<boolean> {
-    const lookup = await this.findDocumentBySelection(selection);
-    return Boolean(lookup);
+    return Boolean(await this.findDocumentBySelection(selection));
   }
 
   async createSignedUrlForSelection(
@@ -113,13 +124,6 @@ export class CatalogService {
       throw new ServiceUnavailableException('Document is not available');
     }
 
-    return this.createSignedUrlFromLookup(lookup, action);
-  }
-
-  private async createSignedUrlFromLookup(
-    lookup: DocumentLookup,
-    action: CatalogAction,
-  ): Promise<SignedDocumentAccess> {
     const ttlSeconds = this.getSignedUrlTtlSeconds();
     const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
     const fileName = this.getFileName(lookup.relativeName);
@@ -156,75 +160,112 @@ export class CatalogService {
   ): Promise<CatalogDocumentRevision> {
     this.assertValidPdfUpload(input.pdf, input.uploadedFileName);
 
-    const companySlug = this.assertValidSlug(input.companySlug, 'company_slug');
-    const documentSlug = this.assertValidSlug(
-      input.documentSlug,
-      'document_slug',
+    const requestedCompany = this.assertCatalogName(
+      input.companyName,
+      'company_name',
     );
-    const categorySlug = input.categorySlug
-      ? this.assertValidSlug(input.categorySlug, 'category_slug')
+    const requestedDocument = this.assertCatalogName(
+      input.documentName,
+      'document_name',
+    );
+    const requestedCategory = input.categoryName
+      ? this.assertCatalogName(input.categoryName, 'category_name')
       : undefined;
-    const displayName = this.normalizeDisplayName(
-      input.displayName,
-      documentSlug,
-    );
     const uploadedFileName = this.normalizeUploadedPdfFileName(
       input.uploadedFileName,
     );
-    const duplicateRecord = await this.findDocumentBySlug(
-      companySlug,
-      documentSlug,
+    const objects = await this.listPdfObjects();
+    const records = this.createDocumentRecords(objects);
+    const existingCompany = this.findCanonicalCompany(
+      records,
+      requestedCompany.slug,
     );
+    const companyName = existingCompany?.company_name ?? requestedCompany.name;
+    const existingCategory = requestedCategory
+      ? this.findCanonicalCategory(
+          records,
+          requestedCompany.slug,
+          requestedCategory.slug,
+        )
+      : undefined;
+    const categoryName =
+      existingCategory?.category_name ?? requestedCategory?.name;
+    const categorySlug = requestedCategory?.slug;
 
-    if (duplicateRecord) {
+    if (
+      records.some(
+        (record) =>
+          record.company_slug === requestedCompany.slug &&
+          record.document_slug === requestedDocument.slug,
+      )
+    ) {
       throw new ConflictException('Catalog document already exists');
     }
 
     const objectName = this.createPrivateDocumentObjectName(
-      companySlug,
+      requestedCompany.slug,
+      categorySlug,
+      uploadedFileName,
+    );
+    const thumbnailObjectName = this.createCatalogThumbnailObjectName(
+      requestedCompany.slug,
+      categorySlug,
       uploadedFileName,
     );
     const file = this.storage.bucket(this.getBucketName()).file(objectName);
-    const [exists] = await file.exists();
+    const thumbnailFile = this.storage
+      .bucket(this.getPublicAssetBucketName())
+      .file(thumbnailObjectName);
 
-    if (exists) {
-      throw new ConflictException('Catalog PDF file already exists');
-    }
+    await this.assertDestinationAvailable(
+      file,
+      'Catalog PDF file already exists',
+    );
+    await this.assertDestinationAvailable(
+      thumbnailFile,
+      'Catalog thumbnail already exists',
+    );
 
     const documentId = ulid();
     const thumbnail = await this.generatePdfThumbnail(input.pdf);
     const customMetadata = this.createDocumentCustomMetadata({
       documentId,
-      companySlug,
+      companyName,
+      companySlug: requestedCompany.slug,
+      categoryName,
       categorySlug,
-      documentSlug,
-      displayName,
+      documentName: requestedDocument.name,
+      documentSlug: requestedDocument.slug,
       originalFileName: uploadedFileName,
     });
 
     try {
       await this.savePdfObject(file, input.pdf, customMetadata);
-      await this.savePublicThumbnail(companySlug, uploadedFileName, thumbnail);
-
-      return this.createDocumentRevisionResponse({
-        documentId,
-        objectName,
-        relativeName: this.stripConfiguredPrefix(objectName),
-        size: input.pdf.length,
-        contentType: 'application/pdf',
-      companySlug,
-      categorySlug,
-      documentSlug,
-      displayName,
-      uploadedFileName,
-    });
+      await this.savePublicThumbnail(thumbnailFile, thumbnail);
     } catch (error) {
-      await this.deleteObjectIfExists(file);
-      await this.deletePublicThumbnail(companySlug, uploadedFileName);
+      await Promise.all([
+        this.deleteObjectIfExists(file),
+        this.deleteObjectIfExists(thumbnailFile),
+      ]);
       throw new InternalServerErrorException('Unable to create document', {
         cause: error,
       });
     }
+
+    return this.createDocumentRevisionResponse({
+      documentId,
+      objectName,
+      relativeName: this.stripConfiguredPrefix(objectName),
+      size: input.pdf.length,
+      contentType: 'application/pdf',
+      companyName,
+      companySlug: requestedCompany.slug,
+      categoryName,
+      categorySlug,
+      documentName: requestedDocument.name,
+      documentSlug: requestedDocument.slug,
+      uploadedFileName,
+    });
   }
 
   async updateCatalogDocument(
@@ -232,182 +273,439 @@ export class CatalogService {
     input: CatalogDocumentUpdateInput,
   ): Promise<CatalogDocumentRevision> {
     if (
-      !input.pdf &&
-      input.displayName === undefined &&
-      input.categorySlug === undefined
+      input.pdf === undefined &&
+      input.documentName === undefined &&
+      input.categoryName === undefined
     ) {
       throw new BadRequestException('PDF file or metadata update is required');
     }
 
-    if (input.pdf) {
+    if (input.pdf !== undefined) {
       if (!input.uploadedFileName) {
         throw new BadRequestException('Uploaded file name is required');
       }
-
       this.assertValidPdfUpload(input.pdf, input.uploadedFileName);
     }
 
-    const lookup = await this.findDocument(documentId);
-
-    if (!lookup || !lookup.object) {
-      throw new NotFoundException('Document was not found');
-    }
-
-    const record = this.createDocumentRecord(lookup.object);
+    const objects = await this.listPdfObjects();
+    const records = this.createDocumentRecords(objects);
+    const record = records.find((item) => item.document_id === documentId);
 
     if (!record) {
       throw new NotFoundException('Document was not found');
     }
 
-    const existingFile = this.storage
-      .bucket(this.getBucketName())
-      .file(lookup.objectName);
-    const nextDocumentId = input.pdf ? ulid() : record.document_id;
-    const nextUploadedFileName = input.uploadedFileName
-      ? this.normalizeUploadedPdfFileName(input.uploadedFileName)
-      : record.original_file_name;
-    const nextObjectName = input.pdf
-      ? this.createPrivateDocumentObjectName(
+    const nextDocument =
+      input.documentName === undefined
+        ? { name: record.document_name, slug: record.document_slug }
+        : this.assertCatalogName(input.documentName, 'document_name');
+
+    if (
+      records.some(
+        (item) =>
+          item.document_id !== record.document_id &&
+          item.company_slug === record.company_slug &&
+          item.document_slug === nextDocument.slug,
+      )
+    ) {
+      throw new ConflictException('Catalog document already exists');
+    }
+
+    let categoryName = record.category_name;
+    let categorySlug = record.category_slug;
+
+    if (input.categoryName !== undefined) {
+      const normalizedCategory = normalizeCatalogName(input.categoryName);
+
+      if (!normalizedCategory) {
+        categoryName = undefined;
+        categorySlug = undefined;
+      } else {
+        const requestedCategory = this.assertCatalogName(
+          normalizedCategory,
+          'category_name',
+        );
+        const existingCategory = this.findCanonicalCategory(
+          records.filter((item) => item.document_id !== record.document_id),
           record.company_slug,
-          nextUploadedFileName,
-        )
-      : lookup.objectName;
-    const categorySlug =
-      input.categorySlug === undefined
-        ? record.category_slug
-        : input.categorySlug
-          ? this.assertValidSlug(input.categorySlug, 'category_slug')
-          : undefined;
-    const displayName =
-      input.displayName === undefined
-        ? record.display_name
-        : this.normalizeDisplayName(input.displayName, record.document_slug);
-    const customMetadata = this.createDocumentCustomMetadata({
-      documentId: nextDocumentId,
-      companySlug: record.company_slug,
-      categorySlug,
-      documentSlug: record.document_slug,
-      displayName,
-      originalFileName: nextUploadedFileName,
-    });
+          requestedCategory.slug,
+        );
 
-    if (input.pdf) {
-      const thumbnail = await this.generatePdfThumbnail(input.pdf);
-      const nextFile = this.storage
-        .bucket(this.getBucketName())
-        .file(nextObjectName);
-
-      try {
-        if (nextObjectName !== lookup.objectName) {
-          const [exists] = await nextFile.exists();
-
-          if (exists) {
-            throw new ConflictException('Catalog PDF file already exists');
-          }
-        }
-
-        await this.savePdfObject(nextFile, input.pdf, customMetadata);
-
-        try {
-          await this.savePublicThumbnail(
-            record.company_slug,
-            nextUploadedFileName,
-            thumbnail,
-          );
-
-          if (nextObjectName !== lookup.objectName) {
-            await this.deleteObjectIfExists(existingFile);
-          }
-
-          if (nextUploadedFileName !== record.original_file_name) {
-            await this.deletePublicThumbnail(
-              record.company_slug,
-              record.original_file_name,
-            );
-          }
-        } catch (error) {
-          await this.deletePublicThumbnail(
-            record.company_slug,
-            nextUploadedFileName,
-          );
-
-          if (nextObjectName !== lookup.objectName) {
-            await this.deleteObjectIfExists(nextFile);
-          }
-
-          throw error;
-        }
-      } catch (error) {
-        if (error instanceof ConflictException) {
-          throw error;
-        }
-
-        throw new InternalServerErrorException('Unable to replace document', {
-          cause: error,
-        });
-      }
-    } else {
-      try {
-        await existingFile.setMetadata({
-          metadata: customMetadata,
-        });
-      } catch (error) {
-        throw new InternalServerErrorException('Unable to replace document', {
-          cause: error,
-        });
+        categoryName =
+          existingCategory?.category_name ?? requestedCategory.name;
+        categorySlug = requestedCategory.slug;
       }
     }
 
-    const activeFile = this.storage
+    const uploadedFileName = input.uploadedFileName
+      ? this.normalizeUploadedPdfFileName(input.uploadedFileName)
+      : record.original_file_name;
+    const nextObjectName = this.createPrivateDocumentObjectName(
+      record.company_slug,
+      categorySlug,
+      uploadedFileName,
+    );
+    const currentThumbnailName = this.createCatalogThumbnailObjectName(
+      record.company_slug,
+      record.category_slug,
+      record.original_file_name,
+    );
+    const nextThumbnailName = this.createCatalogThumbnailObjectName(
+      record.company_slug,
+      categorySlug,
+      uploadedFileName,
+    );
+    const currentFile = this.storage
+      .bucket(this.getBucketName())
+      .file(record.object_name);
+    const nextFile = this.storage
       .bucket(this.getBucketName())
       .file(nextObjectName);
-    const metadata = await this.getFileMetadata(activeFile);
+    const currentThumbnail = this.storage
+      .bucket(this.getPublicAssetBucketName())
+      .file(currentThumbnailName);
+    const nextThumbnail = this.storage
+      .bucket(this.getPublicAssetBucketName())
+      .file(nextThumbnailName);
+    const pdfPathChanged = nextObjectName !== record.object_name;
+    const thumbnailPathChanged = nextThumbnailName !== currentThumbnailName;
 
+    if (pdfPathChanged) {
+      await this.assertDestinationAvailable(
+        nextFile,
+        'Catalog PDF file already exists',
+      );
+    }
+    if (thumbnailPathChanged) {
+      await this.assertDestinationAvailable(
+        nextThumbnail,
+        'Catalog thumbnail already exists',
+      );
+    }
+
+    const customMetadata = this.createDocumentCustomMetadata({
+      documentId: record.document_id,
+      companyName: record.company_name,
+      companySlug: record.company_slug,
+      categoryName,
+      categorySlug,
+      documentName: nextDocument.name,
+      documentSlug: nextDocument.slug,
+      originalFileName: uploadedFileName,
+      uploadedAt: record.uploaded_at,
+    });
+    const customMetadataPatch =
+      this.createDocumentCustomMetadataPatch(customMetadata);
+
+    try {
+      if (input.pdf !== undefined) {
+        const thumbnail = await this.generatePdfThumbnail(input.pdf);
+        await this.savePdfObject(nextFile, input.pdf, customMetadata);
+        await this.savePublicThumbnail(nextThumbnail, thumbnail);
+      } else if (pdfPathChanged) {
+        await currentFile.copy(nextFile);
+        await nextFile.setMetadata({ metadata: customMetadataPatch });
+
+        if (thumbnailPathChanged) {
+          await this.copyObjectIfExists(currentThumbnail, nextThumbnail);
+        }
+      } else {
+        await currentFile.setMetadata({ metadata: customMetadataPatch });
+      }
+    } catch (error) {
+      if (pdfPathChanged) {
+        await this.deleteObjectIfExists(nextFile);
+      }
+      if (thumbnailPathChanged) {
+        await this.deleteObjectIfExists(nextThumbnail);
+      }
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new InternalServerErrorException('Unable to update document', {
+        cause: error,
+      });
+    }
+
+    if (pdfPathChanged) {
+      await this.deleteObjectIfExists(currentFile);
+    }
+    if (thumbnailPathChanged) {
+      await this.deleteObjectIfExists(currentThumbnail);
+    }
+
+    const metadata = await this.getFileMetadata(nextFile);
     return this.createDocumentRevisionResponse({
-      documentId: nextDocumentId,
+      documentId: record.document_id,
       objectName: nextObjectName,
       relativeName: this.stripConfiguredPrefix(nextObjectName),
       size: this.parseSize(metadata.size) ?? input.pdf?.length ?? 0,
       contentType: metadata.contentType ?? 'application/pdf',
       updatedAt: metadata.updated,
+      companyName: record.company_name,
       companySlug: record.company_slug,
+      categoryName,
       categorySlug,
-      documentSlug: record.document_slug,
-      displayName,
-      uploadedFileName: nextUploadedFileName,
+      documentName: nextDocument.name,
+      documentSlug: nextDocument.slug,
+      uploadedFileName,
     });
   }
 
-  async deleteCatalogDocument(documentId: string) {
-    const lookup = await this.findDocument(documentId);
+  async updateCatalogCompany(
+    currentCompanySlug: string,
+    requestedCompanyName: string,
+  ): Promise<CatalogCompanyUpdateResult> {
+    const sourceSlug = slugifyCatalogName(currentCompanySlug);
+    const requestedCompany = this.assertCatalogName(
+      requestedCompanyName,
+      'company_name',
+    );
+    const objects = await this.listPdfObjects();
+    const records = this.createDocumentRecords(objects);
+    const sourceRecords = records.filter(
+      (record) => record.company_slug === sourceSlug,
+    );
 
-    if (!lookup || !lookup.object) {
-      throw new NotFoundException('Document was not found');
+    if (!sourceRecords.length) {
+      throw new NotFoundException('Company was not found');
     }
 
-    const record = this.createDocumentRecord(lookup.object);
+    if (requestedCompany.slug === sourceSlug) {
+      try {
+        await Promise.all(
+          sourceRecords.map((record) =>
+            this.storage
+              .bucket(this.getBucketName())
+              .file(record.object_name)
+              .setMetadata({
+                metadata: this.createDocumentCustomMetadataPatch(
+                  this.createDocumentCustomMetadata({
+                    documentId: record.document_id,
+                    companyName: requestedCompany.name,
+                    companySlug: sourceSlug,
+                    categoryName: record.category_name,
+                    categorySlug: record.category_slug,
+                    documentName: record.document_name,
+                    documentSlug: record.document_slug,
+                    originalFileName: record.original_file_name,
+                    uploadedAt: record.uploaded_at,
+                  }),
+                ),
+              }),
+          ),
+        );
+      } catch (error) {
+        throw new InternalServerErrorException('Unable to update company', {
+          cause: error,
+        });
+      }
+
+      return {
+        ok: true,
+        previous_company_slug: sourceSlug,
+        company_slug: sourceSlug,
+        company_name: requestedCompany.name,
+        moved_document_count: 0,
+        merged: false,
+      };
+    }
+
+    const targetRecords = records.filter(
+      (record) => record.company_slug === requestedCompany.slug,
+    );
+    const targetCompany = this.findCanonicalCompany(
+      targetRecords,
+      requestedCompany.slug,
+    );
+    const companyName = targetCompany?.company_name ?? requestedCompany.name;
+
+    for (const source of sourceRecords) {
+      if (
+        targetRecords.some(
+          (target) => target.document_slug === source.document_slug,
+        )
+      ) {
+        throw new ConflictException(
+          `Document slug already exists in destination company: ${source.document_slug}`,
+        );
+      }
+    }
+
+    const destinations = sourceRecords.map((record) => {
+      const canonicalCategory = record.category_slug
+        ? this.findCanonicalCategory(
+            targetRecords,
+            requestedCompany.slug,
+            record.category_slug,
+          )
+        : undefined;
+      const categoryName =
+        canonicalCategory?.category_name ?? record.category_name;
+      const objectName = this.createPrivateDocumentObjectName(
+        requestedCompany.slug,
+        record.category_slug,
+        record.original_file_name,
+      );
+      const thumbnailName = this.createCatalogThumbnailObjectName(
+        requestedCompany.slug,
+        record.category_slug,
+        record.original_file_name,
+      );
+
+      return {
+        record,
+        categoryName,
+        objectName,
+        thumbnailName,
+        metadata: this.createDocumentCustomMetadataPatch(
+          this.createDocumentCustomMetadata({
+            documentId: record.document_id,
+            companyName,
+            companySlug: requestedCompany.slug,
+            categoryName,
+            categorySlug: record.category_slug,
+            documentName: record.document_name,
+            documentSlug: record.document_slug,
+            originalFileName: record.original_file_name,
+            uploadedAt: record.uploaded_at,
+          }),
+        ),
+      };
+    });
+
+    const destinationNames = new Set<string>();
+    for (const destination of destinations) {
+      if (destinationNames.has(destination.objectName)) {
+        throw new ConflictException('Duplicate destination PDF path');
+      }
+      destinationNames.add(destination.objectName);
+
+      await this.assertDestinationAvailable(
+        this.storage.bucket(this.getBucketName()).file(destination.objectName),
+        'Catalog PDF file already exists in destination company',
+      );
+      await this.assertDestinationAvailable(
+        this.storage
+          .bucket(this.getPublicAssetBucketName())
+          .file(destination.thumbnailName),
+        'Catalog thumbnail already exists in destination company',
+      );
+    }
+
+    const createdPdfFiles: GcsFile[] = [];
+    const createdThumbnailFiles: GcsFile[] = [];
+
+    try {
+      for (const destination of destinations) {
+        const sourcePdf = this.storage
+          .bucket(this.getBucketName())
+          .file(destination.record.object_name);
+        const destinationPdf = this.storage
+          .bucket(this.getBucketName())
+          .file(destination.objectName);
+        await sourcePdf.copy(destinationPdf);
+        createdPdfFiles.push(destinationPdf);
+        await destinationPdf.setMetadata({ metadata: destination.metadata });
+
+        const sourceThumbnail = this.storage
+          .bucket(this.getPublicAssetBucketName())
+          .file(
+            this.createCatalogThumbnailObjectName(
+              sourceSlug,
+              destination.record.category_slug,
+              destination.record.original_file_name,
+            ),
+          );
+        const destinationThumbnail = this.storage
+          .bucket(this.getPublicAssetBucketName())
+          .file(destination.thumbnailName);
+
+        if (
+          await this.copyObjectIfExists(sourceThumbnail, destinationThumbnail)
+        ) {
+          createdThumbnailFiles.push(destinationThumbnail);
+        }
+      }
+    } catch (error) {
+      await Promise.all(
+        [...createdPdfFiles, ...createdThumbnailFiles].map((file) =>
+          this.deleteObjectIfExists(file),
+        ),
+      );
+      throw new InternalServerErrorException('Unable to update company', {
+        cause: error,
+      });
+    }
+
+    await Promise.all(
+      sourceRecords.flatMap((record) => [
+        this.deleteObjectIfExists(
+          this.storage.bucket(this.getBucketName()).file(record.object_name),
+        ),
+        this.deleteObjectIfExists(
+          this.storage
+            .bucket(this.getPublicAssetBucketName())
+            .file(
+              this.createCatalogThumbnailObjectName(
+                sourceSlug,
+                record.category_slug,
+                record.original_file_name,
+              ),
+            ),
+        ),
+      ]),
+    );
+
+    return {
+      ok: true,
+      previous_company_slug: sourceSlug,
+      company_slug: requestedCompany.slug,
+      company_name: companyName,
+      moved_document_count: sourceRecords.length,
+      merged: targetRecords.length > 0,
+    };
+  }
+
+  async deleteCatalogDocument(documentId: string) {
+    const objects = await this.listPdfObjects();
+    const record = this.createDocumentRecords(objects).find(
+      (item) => item.document_id === documentId,
+    );
 
     if (!record) {
       throw new NotFoundException('Document was not found');
     }
 
+    const thumbnailUrl = this.createCatalogThumbnailUrl(
+      record.company_slug,
+      record.category_slug,
+      record.original_file_name,
+    );
+
     try {
-      await this.deleteObjectIfExists(
-        this.storage.bucket(this.getBucketName()).file(lookup.objectName),
-      );
-      await this.deletePublicThumbnail(
-        record.company_slug,
-        record.original_file_name,
-      );
+      await Promise.all([
+        this.storage
+          .bucket(this.getBucketName())
+          .file(record.object_name)
+          .delete({ ignoreNotFound: true }),
+        this.storage
+          .bucket(this.getPublicAssetBucketName())
+          .file(
+            this.createCatalogThumbnailObjectName(
+              record.company_slug,
+              record.category_slug,
+              record.original_file_name,
+            ),
+          )
+          .delete({ ignoreNotFound: true }),
+      ]);
 
       return {
         ok: true,
         document_id: record.document_id,
-        object_name: lookup.objectName,
-        thumbnail_url: this.createCatalogThumbnailUrl(
-          record.company_slug,
-          record.original_file_name,
-        ),
+        object_name: record.object_name,
+        thumbnail_url: thumbnailUrl,
       };
     } catch (error) {
       throw new InternalServerErrorException('Unable to delete document', {
@@ -421,13 +719,7 @@ export class CatalogService {
   ): CatalogNavigationResponse {
     const companies = new Map<string, CatalogNavigationCompany>();
 
-    for (const object of objects) {
-      const record = this.createDocumentRecord(object);
-
-      if (!record) {
-        continue;
-      }
-
+    for (const record of this.createDocumentRecords(objects)) {
       const company =
         companies.get(record.company_slug) ??
         this.createNavigationCompany(record);
@@ -447,7 +739,6 @@ export class CatalogService {
         if (!company.categories.includes(category)) {
           company.categories.push(category);
         }
-
         category.documents.push(document);
       } else {
         company.documents.push(document);
@@ -477,27 +768,20 @@ export class CatalogService {
   }
 
   formatLabel(value: string): string {
-    const withoutPdf = value.replace(/\.pdf$/i, '');
-    const normalized = withoutPdf
-      .replace(/[_-]+/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
+    return formatCatalogLabel(value);
+  }
 
-    return normalized
-      .split(' ')
-      .filter(Boolean)
-      .map((word) => {
-        if (/^[A-Z0-9]{2,}$/.test(word)) {
-          return word;
-        }
+  slugifyName(value: string): string {
+    return slugifyCatalogName(value);
+  }
 
-        if (/^[A-Z0-9]+$/.test(word) && word.length <= 4) {
-          return word;
-        }
-
-        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
-      })
-      .join(' ');
+  private createDocumentRecords(
+    objects: CatalogStorageObject[],
+  ): CatalogDocumentRecord[] {
+    return objects
+      .map((object) => this.createDocumentRecord(object))
+      .filter((record): record is CatalogDocumentRecord => record !== null)
+      .sort((left, right) => left.object_name.localeCompare(right.object_name));
   }
 
   private createDocumentRecord(
@@ -510,28 +794,44 @@ export class CatalogService {
     const relativeName = this.stripConfiguredPrefix(object.name);
     const parts = relativeName.split('/').filter(Boolean);
 
-    if (parts.length !== 2) {
+    if (parts.length !== 2 && parts.length !== 3) {
       return null;
     }
 
     const [companyFolder] = parts;
+    const categoryFolder = parts.length === 3 ? parts[1] : undefined;
     const fileName = parts[parts.length - 1];
-
     const companySlug = this.getCustomMetadata(object, 'company_slug');
-    const documentSlug = this.getCustomMetadata(object, 'document_slug');
+    const companyName = this.getCustomMetadata(object, 'company_name');
     const categorySlug = this.getCustomMetadata(object, 'category_slug');
-    const displayName = this.getCustomMetadata(object, 'display_name');
-    const companyName =
-      this.getCustomMetadata(object, 'company_name') ??
-      this.formatLabel(companySlug ?? companyFolder);
-    const categoryName =
-      this.getCustomMetadata(object, 'category_name') ??
-      (categorySlug ? this.formatLabel(categorySlug) : undefined);
+    const categoryName = this.getCustomMetadata(object, 'category_name');
+    const documentSlug = this.getCustomMetadata(object, 'document_slug');
+    const documentName = this.getCustomMetadata(object, 'document_name');
     const documentId = this.getCustomMetadata(object, 'document_id');
     const originalFileName =
       this.getCustomMetadata(object, 'original_file_name') ?? fileName;
 
-    if (!companySlug || !documentSlug || !displayName || !documentId) {
+    if (
+      !companySlug ||
+      !companyName ||
+      !documentSlug ||
+      !documentName ||
+      !documentId ||
+      companyFolder !== companySlug ||
+      slugifyCatalogName(companyName) !== companySlug ||
+      slugifyCatalogName(documentName) !== documentSlug
+    ) {
+      return null;
+    }
+
+    if (
+      (categoryFolder &&
+        (!categorySlug ||
+          !categoryName ||
+          categoryFolder !== categorySlug ||
+          slugifyCatalogName(categoryName) !== categorySlug)) ||
+      (!categoryFolder && (categorySlug || categoryName))
+    ) {
       return null;
     }
 
@@ -542,64 +842,46 @@ export class CatalogService {
       category_slug: categorySlug,
       category_name: categoryName,
       document_slug: documentSlug,
-      display_name: displayName,
+      document_name: documentName,
       thumbnail_url: this.createCatalogThumbnailUrl(
         companySlug,
+        categorySlug,
         originalFileName,
       ),
       metadata: this.createMetadata(object),
       object_name: object.name,
       relative_name: relativeName,
       original_file_name: originalFileName,
+      uploaded_at: this.getCustomMetadata(object, 'uploaded_at'),
     };
   }
 
-  private async findDocument(
-    documentId: string,
-  ): Promise<DocumentLookup | null> {
-    const objects = await this.listPdfObjects();
-
-    const match = objects
-      .map((object) => this.createDocumentRecord(object))
-      .filter((record): record is CatalogDocumentRecord => record !== null)
-      .find((record) => record.document_id === documentId);
-
-    if (!match) {
-      return null;
-    }
-
-    return {
-      objectName: match.object_name,
-      relativeName: match.relative_name,
-      documentId,
-      object: objects.find((object) => object.name === match.object_name),
-    };
-  }
-
-  private async findDocumentBySlug(
+  private findCanonicalCompany(
+    records: CatalogDocumentRecord[],
     companySlug: string,
-    documentSlug: string,
-  ): Promise<CatalogDocumentRecord | null> {
-    const objects = await this.listPdfObjects();
-    return (
-      objects
-        .map((object) => this.createDocumentRecord(object))
-        .filter((record): record is CatalogDocumentRecord => record !== null)
-        .find(
-          (record) =>
-            record.company_slug === companySlug &&
-            record.document_slug === documentSlug,
-        ) ?? null
+  ): CatalogDocumentRecord | undefined {
+    return records.find((record) => record.company_slug === companySlug);
+  }
+
+  private findCanonicalCategory(
+    records: CatalogDocumentRecord[],
+    companySlug: string,
+    categorySlug: string,
+  ): CatalogDocumentRecord | undefined {
+    return records.find(
+      (record) =>
+        record.company_slug === companySlug &&
+        record.category_slug === categorySlug,
     );
   }
 
   private async findDocumentBySelection(
     selection: CatalogDocumentSelection,
   ): Promise<DocumentLookup | null> {
-    const companySlug = this.slugify(selection.company_slug);
-    const documentSlug = this.slugify(selection.document_slug);
+    const companySlug = slugifyCatalogName(selection.company_slug);
+    const documentSlug = slugifyCatalogName(selection.document_slug);
     const categorySlug = selection.category_slug
-      ? this.slugify(selection.category_slug)
+      ? slugifyCatalogName(selection.category_slug)
       : undefined;
 
     if (!companySlug || !documentSlug) {
@@ -607,15 +889,12 @@ export class CatalogService {
     }
 
     const objects = await this.listPdfObjects();
-    const match = objects
-      .map((object) => this.createDocumentRecord(object))
-      .filter((record): record is CatalogDocumentRecord => record !== null)
-      .find(
-        (record) =>
-          record.company_slug === companySlug &&
-          record.document_slug === documentSlug &&
-          (!categorySlug || record.category_slug === categorySlug),
-      );
+    const match = this.createDocumentRecords(objects).find(
+      (record) =>
+        record.company_slug === companySlug &&
+        record.document_slug === documentSlug &&
+        record.category_slug === categorySlug,
+    );
 
     if (!match) {
       return null;
@@ -641,7 +920,6 @@ export class CatalogService {
       return files
         .map((file) => {
           const metadata = file.metadata as unknown as GcsObjectMetadata;
-
           return {
             name: file.name,
             size: metadata.size,
@@ -664,7 +942,7 @@ export class CatalogService {
   }
 
   private async savePdfObject(
-    file: ReturnType<ReturnType<Storage['bucket']>['file']>,
+    file: GcsFile,
     pdf: Buffer,
     customMetadata: Record<string, string>,
   ): Promise<void> {
@@ -679,49 +957,56 @@ export class CatalogService {
   }
 
   private async savePublicThumbnail(
-    companySlug: string,
-    documentSlug: string,
+    file: GcsFile,
     thumbnail: Buffer,
   ): Promise<void> {
-    await this.storage
-      .bucket(this.getPublicAssetBucketName())
-      .file(this.createCatalogThumbnailObjectName(companySlug, documentSlug))
-      .save(thumbnail, {
-        resumable: false,
-        metadata: {
-          contentType: 'image/webp',
-          cacheControl: 'public, max-age=31536000, immutable',
-        },
-      });
+    await file.save(thumbnail, {
+      resumable: false,
+      metadata: {
+        contentType: 'image/webp',
+        cacheControl: 'public, max-age=31536000, immutable',
+      },
+    });
   }
 
-  private async deletePublicThumbnail(
-    companySlug: string,
-    documentSlug: string,
-  ): Promise<void> {
-    await this.deleteObjectIfExists(
-      this.storage
-        .bucket(this.getPublicAssetBucketName())
-        .file(this.createCatalogThumbnailObjectName(companySlug, documentSlug)),
-    );
+  private async copyObjectIfExists(
+    source: GcsFile,
+    destination: GcsFile,
+  ): Promise<boolean> {
+    const [exists] = await source.exists();
+    if (!exists) {
+      return false;
+    }
+    await source.copy(destination);
+    return true;
   }
 
-  private async deleteObjectIfExists(
-    file: ReturnType<ReturnType<Storage['bucket']>['file']>,
+  private async assertDestinationAvailable(
+    file: GcsFile,
+    message: string,
   ): Promise<void> {
-    try {
-      await file.delete({ ignoreNotFound: true });
-    } catch {
-      // Best-effort cleanup only.
+    const [exists] = await file.exists();
+    if (exists) {
+      throw new ConflictException(message);
     }
   }
 
-  private async getFileMetadata(
-    file: ReturnType<ReturnType<Storage['bucket']>['file']>,
-  ): Promise<GcsObjectMetadata> {
-    const rawMetadataResult =
+  private async deleteObjectIfExists(file: GcsFile): Promise<void> {
+    try {
+      await file.delete({ ignoreNotFound: true });
+    } catch (error) {
+      this.logger.warn(
+        `Unable to clean up GCS object ${file.name}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  private async getFileMetadata(file: GcsFile): Promise<GcsObjectMetadata> {
+    const [metadata] =
       (await file.getMetadata()) as unknown as GcsObjectMetadata[];
-    return rawMetadataResult[0] ?? {};
+    return metadata ?? {};
   }
 
   private async generatePdfThumbnail(pdfBuffer: Buffer): Promise<Buffer> {
@@ -734,7 +1019,6 @@ export class CatalogService {
 
       try {
         const firstPage = await document.getPage(1);
-
         return sharp(Buffer.from(firstPage))
           .resize({
             width: this.getThumbnailWidth(),
@@ -776,10 +1060,12 @@ export class CatalogService {
     size: number;
     contentType: string;
     updatedAt?: string;
+    companyName: string;
     companySlug: string;
+    categoryName?: string;
     categorySlug?: string;
+    documentName: string;
     documentSlug: string;
-    displayName: string;
     uploadedFileName: string;
   }): CatalogDocumentRevision {
     return {
@@ -790,11 +1076,14 @@ export class CatalogService {
       content_type: input.contentType,
       updated_at: input.updatedAt,
       company_slug: input.companySlug,
+      company_name: input.companyName,
       category_slug: input.categorySlug,
+      category_name: input.categoryName,
       document_slug: input.documentSlug,
-      display_name: input.displayName,
+      document_name: input.documentName,
       thumbnail_url: this.createCatalogThumbnailUrl(
         input.companySlug,
+        input.categorySlug,
         input.uploadedFileName,
       ),
     };
@@ -832,7 +1121,7 @@ export class CatalogService {
       category_slug: record.category_slug,
       category_name: record.category_name,
       document_slug: record.document_slug,
-      display_name: record.display_name,
+      document_name: record.document_name,
       thumbnail_url: record.thumbnail_url,
       metadata: record.metadata,
     };
@@ -851,7 +1140,7 @@ export class CatalogService {
     documents: CatalogDocumentSummary[],
   ): CatalogDocumentSummary[] {
     return [...documents].sort((left, right) =>
-      left.display_name.localeCompare(right.display_name),
+      left.document_name.localeCompare(right.document_name),
     );
   }
 
@@ -881,11 +1170,9 @@ export class CatalogService {
     if (!uploadedFileName || !/\.pdf$/i.test(uploadedFileName)) {
       throw new BadRequestException('Uploaded file must be a PDF');
     }
-
     if (pdf.length === 0) {
       throw new BadRequestException('Uploaded PDF is empty');
     }
-
     if (!pdf.subarray(0, 5).equals(Buffer.from('%PDF-'))) {
       throw new BadRequestException('Uploaded file is not a valid PDF');
     }
@@ -896,74 +1183,78 @@ export class CatalogService {
       .split(/[\\/]/)
       .filter(Boolean)
       .pop()
-      ?.replace(/[\u0000-\u001f\u007f]/g, '')
+      ?.replace(/\p{Cc}/gu, '')
       .replace(/\s+/g, ' ')
       .trim();
 
     if (!fileName || !/\.pdf$/i.test(fileName)) {
       throw new BadRequestException('Uploaded file must be a PDF');
     }
-
     return fileName;
+  }
+
+  private assertCatalogName(
+    value: string,
+    fieldName: string,
+  ): CatalogNameIdentity {
+    const name = normalizeCatalogName(value);
+    if (!name) {
+      throw new BadRequestException(`${fieldName} is required`);
+    }
+
+    const slug = slugifyCatalogName(name);
+    if (!slug) {
+      throw new BadRequestException(
+        `${fieldName} must contain at least one ASCII letter or number`,
+      );
+    }
+
+    return { name, slug };
   }
 
   private getBucketName(): string {
     const bucketName = process.env.GCS_CATALOG_BUCKET?.trim();
-
     if (!bucketName) {
       throw new ServiceUnavailableException('GCS_CATALOG_BUCKET is required');
     }
-
     return bucketName;
   }
 
   private getPublicAssetBucketName(): string {
     const bucketName = process.env.GCS_CATALOG_PUBLIC_ASSET_BUCKET?.trim();
-
     if (!bucketName) {
       throw new ServiceUnavailableException(
         'GCS_CATALOG_PUBLIC_ASSET_BUCKET is required for thumbnail upload',
       );
     }
-
     return bucketName;
   }
 
   private getPrefix(): string {
-    const rawPrefix = process.env.GCS_CATALOG_PREFIX?.trim() ?? '';
-    const normalized = this.normalizeObjectName(rawPrefix);
-
+    const normalized = this.normalizeObjectName(
+      process.env.GCS_CATALOG_PREFIX?.trim() ?? '',
+    );
     if (!normalized) {
       return '';
     }
-
     return normalized.endsWith('/') ? normalized : `${normalized}/`;
   }
 
   private getSignedUrlTtlSeconds(): number {
     const value = Number(process.env.CATALOG_SIGNED_URL_TTL_SECONDS ?? 900);
-
-    if (!Number.isFinite(value) || value <= 0) {
-      return 900;
-    }
-
-    return Math.floor(value);
+    return Number.isFinite(value) && value > 0 ? Math.floor(value) : 900;
   }
 
   private getPublicAssetBaseUrl(): string | null {
     const configuredBaseUrl = process.env.CATALOG_PUBLIC_ASSET_BASE_URL?.trim();
-
     if (configuredBaseUrl) {
       return configuredBaseUrl.replace(/\/+$/g, '');
     }
 
     const publicBucket = process.env.GCS_CATALOG_PUBLIC_ASSET_BUCKET?.trim();
-
-    if (publicBucket) {
-      return `https://storage.googleapis.com/${publicBucket}`;
-    }
-
-    return null;
+    return publicBucket
+      ? `https://storage.googleapis.com/${publicBucket}`
+      : null;
   }
 
   private normalizeObjectName(name: string): string {
@@ -972,28 +1263,46 @@ export class CatalogService {
 
   private createPrivateDocumentObjectName(
     companySlug: string,
+    categorySlug: string | undefined,
     uploadedFileName: string,
   ): string {
-    return `${this.getPrefix()}${companySlug}/${uploadedFileName}`;
+    const categoryPrefix = categorySlug ? `${categorySlug}/` : '';
+    return `${this.getPrefix()}${companySlug}/${categoryPrefix}${uploadedFileName}`;
   }
 
   private createDocumentCustomMetadata(input: {
     documentId: string;
+    companyName: string;
     companySlug: string;
+    categoryName?: string;
     categorySlug?: string;
+    documentName: string;
     documentSlug: string;
-    displayName: string;
     originalFileName: string;
+    uploadedAt?: string;
   }): Record<string, string> {
     return this.removeUndefinedValues({
       document_id: input.documentId,
+      company_name: input.companyName,
       company_slug: input.companySlug,
+      category_name: input.categoryName,
       category_slug: input.categorySlug,
+      document_name: input.documentName,
       document_slug: input.documentSlug,
-      display_name: input.displayName,
       original_file_name: input.originalFileName,
-      uploaded_at: new Date().toISOString(),
+      uploaded_at: input.uploadedAt ?? new Date().toISOString(),
     });
+  }
+
+  private createDocumentCustomMetadataPatch(
+    metadata: Record<string, string>,
+  ): Record<string, string | null> {
+    return {
+      ...metadata,
+      category_name: metadata.category_name ?? null,
+      category_slug: metadata.category_slug ?? null,
+      display_name: null,
+    };
   }
 
   private removeUndefinedValues(
@@ -1006,37 +1315,19 @@ export class CatalogService {
     );
   }
 
-  private assertValidSlug(value: string, fieldName: string): string {
-    const slug = this.slugify(value);
-
-    if (!slug) {
-      throw new BadRequestException(`${fieldName} is required`);
-    }
-
-    return slug;
-  }
-
-  private normalizeDisplayName(
-    displayName: string | undefined,
-    documentSlug: string,
-  ): string {
-    const normalized = displayName?.replace(/\s+/g, ' ').trim();
-
-    return normalized || this.formatLabel(documentSlug);
-  }
-
   private createCatalogThumbnailUrl(
     companySlug: string,
+    categorySlug: string | undefined,
     uploadedFileName: string,
   ): string | undefined {
     const baseUrl = this.getPublicAssetBaseUrl();
-
     if (!baseUrl) {
       return undefined;
     }
 
     return `${baseUrl}/${this.createCatalogThumbnailObjectName(
       companySlug,
+      categorySlug,
       uploadedFileName,
     )
       .split('/')
@@ -1046,9 +1337,11 @@ export class CatalogService {
 
   private createCatalogThumbnailObjectName(
     companySlug: string,
+    categorySlug: string | undefined,
     uploadedFileName: string,
   ): string {
-    return `catalog-thumbnails/v1/${companySlug}/${this.getFileBaseName(
+    const categoryPrefix = categorySlug ? `${categorySlug}/` : '';
+    return `catalog-thumbnails/v1/${companySlug}/${categoryPrefix}${this.getFileBaseName(
       uploadedFileName,
     )}.webp`;
   }
@@ -1068,11 +1361,9 @@ export class CatalogService {
 
   private getThumbnailQuality(): number {
     const value = Number(process.env.CATALOG_THUMBNAIL_QUALITY ?? 72);
-
     if (!Number.isFinite(value) || value <= 0) {
       return 72;
     }
-
     return Math.min(Math.floor(value), 100);
   }
 
@@ -1089,7 +1380,6 @@ export class CatalogService {
     if (value === undefined || value === null) {
       return undefined;
     }
-
     const size = Number(value);
     return Number.isFinite(size) ? size : undefined;
   }
@@ -1102,12 +1392,10 @@ export class CatalogService {
     const units = ['KB', 'MB', 'GB', 'TB'];
     let size = bytes / 1024;
     let unitIndex = 0;
-
     while (size >= 1024 && unitIndex < units.length - 1) {
       size /= 1024;
       unitIndex += 1;
     }
-
     return `${size.toFixed(1)} ${units[unitIndex]}`;
   }
 
@@ -1118,13 +1406,6 @@ export class CatalogService {
       year: 'numeric',
       timeZone: 'UTC',
     }).format(new Date(value));
-  }
-
-  private slugify(value: string): string {
-    return this.formatLabel(value)
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '');
   }
 
   private escapeQuotedValue(value: string): string {

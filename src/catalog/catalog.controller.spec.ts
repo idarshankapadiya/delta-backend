@@ -10,18 +10,24 @@ describe('CatalogController', () => {
   let controller: CatalogController;
   let catalogAccessService: CatalogAccessService;
   let catalogService: {
+    createCatalogDocument: jest.Mock;
     createSignedUrlForSelection: jest.Mock;
     documentSelectionExists: jest.Mock;
     getCatalogAll: jest.Mock;
     getCatalogLibrary: jest.Mock;
+    updateCatalogCompany: jest.Mock;
+    updateCatalogDocument: jest.Mock;
   };
 
   beforeEach(async () => {
     catalogService = {
+      createCatalogDocument: jest.fn(),
       createSignedUrlForSelection: jest.fn(),
       documentSelectionExists: jest.fn(),
       getCatalogAll: jest.fn(),
       getCatalogLibrary: jest.fn(),
+      updateCatalogCompany: jest.fn(),
+      updateCatalogDocument: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -105,7 +111,7 @@ describe('CatalogController', () => {
       'catalog_access=google-redirect-session-token',
     );
     expect(reply.code).toHaveBeenCalledWith(303);
-    expect(reply.redirect).toHaveBeenCalledWith('http://localhost:5173/');
+    expect(reply.redirect).toHaveBeenCalledWith('https://darshanent.co.in/');
   });
 
   it('rejects Google redirect sign-in when the CSRF token is invalid', async () => {
@@ -215,13 +221,15 @@ describe('CatalogController', () => {
 
     const cookie = reply.header.mock.calls[0]?.[1] ?? '';
 
-    expect(controller.getAccessMe(createRequest(cookie))).toMatchObject({
+    const session = controller.getAccessMe(createRequest(cookie));
+
+    expect(session).toMatchObject({
       ok: true,
       auth_provider: 'whatsapp_otp',
       mobile: '9999999999',
       name: 'Customer',
-      expires_at: expect.any(String),
     });
+    expect(typeof session.expires_at).toBe('string');
   });
 
   it('rejects current access session lookup without the access cookie', () => {

@@ -36,13 +36,44 @@ export class AppService {
           method: 'POST',
           path: '/api/message',
           description: 'Create a contact form message in Firestore.',
-          auth: 'allowed browser origin for browser requests',
+          auth: 'public-site origin, reCAPTCHA Enterprise, and rate limits',
+        },
+        {
+          method: 'POST',
+          path: '/api/business/auth/google',
+          description:
+            'Verify an allowlisted Google account and create a business session.',
+          auth: 'Google ID token and approved business email',
         },
         {
           method: 'GET',
-          path: '/api/message',
-          description: 'Return contact form messages newest first.',
-          auth: 'x-backend-admin-token',
+          path: '/api/business/auth/me',
+          description: 'Return the current authenticated business user.',
+          auth: '__Host-business_session HttpOnly cookie',
+        },
+        {
+          method: 'POST',
+          path: '/api/business/auth/logout',
+          description: 'Revoke the current business session.',
+          auth: 'business session and X-CSRF-Token',
+        },
+        {
+          method: 'GET',
+          path: '/api/business/messages',
+          description: 'Return contact messages newest first.',
+          auth: 'business session',
+        },
+        {
+          method: 'GET',
+          path: '/api/business/catalog/all',
+          description: 'Return the catalog for dashboard administration.',
+          auth: 'business session',
+        },
+        {
+          method: 'POST/PUT/DELETE',
+          path: '/api/business/catalog/**',
+          description: 'Create, update, rename, or delete catalog content.',
+          auth: 'business session and X-CSRF-Token',
         },
         {
           method: 'GET',
@@ -102,25 +133,6 @@ export class AppService {
           description:
             'Create a short-lived signed PDF URL for preview or download.',
           auth: 'allowed browser origin for browser requests',
-        },
-        {
-          method: 'POST',
-          path: '/api/catalog/documents',
-          description: 'Create a catalog document PDF and thumbnail.',
-          auth: 'x-backend-admin-token',
-        },
-        {
-          method: 'PUT',
-          path: '/api/catalog/documents/:document_id',
-          description:
-            'Update catalog document metadata or replace the current PDF.',
-          auth: 'x-backend-admin-token',
-        },
-        {
-          method: 'DELETE',
-          path: '/api/catalog/documents/:document_id',
-          description: 'Delete a catalog document and public thumbnail.',
-          auth: 'x-backend-admin-token',
         },
       ],
     };

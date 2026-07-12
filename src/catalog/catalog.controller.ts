@@ -2,12 +2,9 @@ import {
   Body,
   BadRequestException,
   Controller,
-  Delete,
   Get,
   NotFoundException,
-  Param,
   Post,
-  Put,
   Req,
   Res,
   UseGuards,
@@ -17,7 +14,6 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { CatalogAccessService } from './catalog-access.service';
 import { CatalogService } from './catalog.service';
 import { CatalogAccessDto } from './dto/catalog-access.dto';
-import { CatalogDocumentParamsDto } from './dto/catalog-document-params.dto';
 import { CatalogGoogleAccessDto } from './dto/catalog-google-access.dto';
 import { CatalogGoogleRedirectDto } from './dto/catalog-google-redirect.dto';
 import { CatalogLibraryDto } from './dto/catalog-library.dto';
@@ -25,20 +21,8 @@ import { CatalogOtpRequestDto } from './dto/catalog-otp-request.dto';
 import { CatalogVerifyOtpDto } from './dto/catalog-verify-otp.dto';
 import { DocumentAccessDto } from './dto/document-access.dto';
 import { CatalogRateLimiterService } from './catalog-rate-limiter.service';
-import { CatalogOriginGuard } from './catalog-origin.guard';
-import { CatalogAdminGuard } from './catalog-admin.guard';
-import { getCatalogUploadMaxBytes } from '../config/catalog.config';
-import { getAllowedFrontendOrigins } from '../config/http.config';
-
-interface CatalogMultipartFile {
-  buffer: Buffer;
-  filename: string;
-}
-
-interface CatalogMultipartUpload {
-  fields: Record<string, string>;
-  file?: CatalogMultipartFile;
-}
+import { PublicSiteOriginGuard } from '../security/origin.guards';
+import { getPublicSiteOrigins } from '../config/origin.config';
 
 @Controller('catalog')
 export class CatalogController {
@@ -54,13 +38,13 @@ export class CatalogController {
   }
 
   @Post('library')
-  @UseGuards(CatalogOriginGuard)
+  @UseGuards(PublicSiteOriginGuard)
   getCatalogLibrary(@Body() body: CatalogLibraryDto) {
     return this.catalogService.getCatalogLibrary(body.company_slugs);
   }
 
   @Post('access')
-  @UseGuards(CatalogOriginGuard)
+  @UseGuards(PublicSiteOriginGuard)
   createAccess(@Body() body: CatalogAccessDto, @Req() request: FastifyRequest) {
     const ip = this.getClientIp(request);
     this.rateLimiter.assertAllowed(
@@ -77,7 +61,7 @@ export class CatalogController {
   }
 
   @Post('access/google')
-  @UseGuards(CatalogOriginGuard)
+  @UseGuards(PublicSiteOriginGuard)
   async createGoogleAccess(
     @Body() body: CatalogGoogleAccessDto,
     @Req() request: FastifyRequest,
@@ -146,7 +130,7 @@ export class CatalogController {
   }
 
   @Get('access/me')
-  @UseGuards(CatalogOriginGuard)
+  @UseGuards(PublicSiteOriginGuard)
   getAccessMe(@Req() request: FastifyRequest) {
     const token = this.parseCookies(request.headers.cookie).catalog_access;
 
@@ -171,7 +155,7 @@ export class CatalogController {
   }
 
   @Post('access/request-otp')
-  @UseGuards(CatalogOriginGuard)
+  @UseGuards(PublicSiteOriginGuard)
   async requestAccessOtp(
     @Body() body: CatalogOtpRequestDto,
     @Req() request: FastifyRequest,
@@ -227,7 +211,7 @@ export class CatalogController {
   }
 
   @Post('access/verify-otp')
-  @UseGuards(CatalogOriginGuard)
+  @UseGuards(PublicSiteOriginGuard)
   verifyAccessOtp(
     @Body() body: CatalogVerifyOtpDto,
     @Req() request: FastifyRequest,
@@ -257,7 +241,7 @@ export class CatalogController {
   }
 
   @Post('documents/access')
-  @UseGuards(CatalogOriginGuard)
+  @UseGuards(PublicSiteOriginGuard)
   async createDocumentAccess(
     @Body() body: DocumentAccessDto,
     @Req() request: FastifyRequest,
@@ -293,124 +277,6 @@ export class CatalogController {
     }
 
     return this.catalogService.createSignedUrlForSelection(body, body.action);
-  }
-
-  @Post('documents')
-  @UseGuards(CatalogOriginGuard, CatalogAdminGuard)
-  async createCatalogDocument(@Req() request: FastifyRequest) {
-    const upload = await this.readCatalogMultipartUpload(request, true);
-
-    if (!upload.file) {
-      throw new BadRequestException('PDF file is required');
-    }
-
-    return this.catalogService.createCatalogDocument({
-      pdf: upload.file.buffer,
-      uploadedFileName: upload.file.filename,
-      companySlug: this.getRequiredField(upload.fields, 'company_slug'),
-      categorySlug: upload.fields.category_slug,
-      documentSlug: this.getRequiredField(upload.fields, 'document_slug'),
-      displayName: upload.fields.display_name,
-    });
-  }
-
-  @Put('documents/:document_id')
-  @UseGuards(CatalogOriginGuard, CatalogAdminGuard)
-  async updateCatalogDocument(
-    @Param() params: CatalogDocumentParamsDto,
-    @Req() request: FastifyRequest,
-  ) {
-    const upload = await this.readCatalogMultipartUpload(request, false);
-
-    return this.catalogService.updateCatalogDocument(params.document_id, {
-      pdf: upload.file?.buffer,
-      uploadedFileName: upload.file?.filename,
-      categorySlug: upload.fields.category_slug,
-      displayName: upload.fields.display_name,
-    });
-  }
-
-  @Delete('documents/:document_id')
-  @UseGuards(CatalogOriginGuard, CatalogAdminGuard)
-  async deleteCatalogDocument(@Param() params: CatalogDocumentParamsDto) {
-    return this.catalogService.deleteCatalogDocument(params.document_id);
-  }
-
-  private async readCatalogMultipartUpload(
-    request: FastifyRequest,
-    fileRequired: boolean,
-  ): Promise<CatalogMultipartUpload> {
-    if (!request.isMultipart()) {
-      throw new BadRequestException('multipart/form-data is required');
-    }
-
-    const fields: Record<string, string> = {};
-    let file: CatalogMultipartFile | undefined;
-
-    for await (const part of request.parts({
-      limits: {
-        files: 1,
-        fileSize: getCatalogUploadMaxBytes(),
-        fields: 8,
-        parts: 10,
-      },
-    })) {
-      if (part.type === 'file') {
-        if (part.fieldname !== 'file') {
-          throw new BadRequestException('PDF file field must be named file');
-        }
-
-        if (file) {
-          throw new BadRequestException('Only one PDF file is allowed');
-        }
-
-        if (
-          part.mimetype !== 'application/pdf' &&
-          part.mimetype !== 'application/octet-stream'
-        ) {
-          throw new BadRequestException('Uploaded file must be a PDF');
-        }
-
-        file = {
-          buffer: await part.toBuffer(),
-          filename: part.filename,
-        };
-        continue;
-      }
-
-      fields[part.fieldname] = this.getMultipartFieldValue(part.value);
-    }
-
-    if (fileRequired && !file) {
-      throw new BadRequestException('PDF file is required');
-    }
-
-    return { fields, file };
-  }
-
-  private getRequiredField(
-    fields: Record<string, string>,
-    fieldName: string,
-  ): string {
-    const value = fields[fieldName]?.trim();
-
-    if (!value) {
-      throw new BadRequestException(`${fieldName} is required`);
-    }
-
-    return value;
-  }
-
-  private getMultipartFieldValue(value: unknown): string {
-    if (typeof value === 'string') {
-      return value.trim();
-    }
-
-    if (typeof value === 'number' || typeof value === 'boolean') {
-      return String(value).trim();
-    }
-
-    return '';
   }
 
   private assertGoogleCsrfToken(
@@ -467,7 +333,7 @@ export class CatalogController {
     const configuredUrl =
       process.env.CATALOG_GOOGLE_REDIRECT_URL?.trim() ||
       process.env.FRONTEND_BASE_URL?.trim() ||
-      getAllowedFrontendOrigins()[0] ||
+      getPublicSiteOrigins()[0] ||
       'http://localhost:5173';
 
     try {

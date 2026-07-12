@@ -112,9 +112,9 @@ export class MessageService {
       typeof value === 'object' &&
       value !== null &&
       'toDate' in value &&
-      typeof value.toDate === 'function'
+      typeof (value as { toDate?: unknown }).toDate === 'function'
     ) {
-      const date = value.toDate() as unknown;
+      const date = (value as { toDate(): unknown }).toDate();
       return date instanceof Date ? date.toISOString() : '';
     }
 
