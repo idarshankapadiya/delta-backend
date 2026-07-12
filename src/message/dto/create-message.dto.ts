@@ -1,10 +1,16 @@
-import { IsEmail, IsNotEmpty, IsString, MaxLength } from 'class-validator';
+import {
+  IsEmail,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 
 export class CreateMessageDto {
   @IsString()
-  @IsNotEmpty()
+  @IsOptional()
   @MaxLength(4096)
-  captcha_token: string;
+  captcha_token?: string;
 
   @IsString()
   @IsNotEmpty()

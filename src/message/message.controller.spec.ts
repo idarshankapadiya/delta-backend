@@ -81,4 +81,44 @@ describe('MessageController', () => {
     });
     expect(reply.header).toHaveBeenCalledWith('Cache-Control', 'no-store');
   });
+
+  it('allows a missing CAPTCHA token when the verifier is configured to skip it', async () => {
+    service.createMessage.mockResolvedValue({
+      ok: true,
+      id: 'message-2',
+      created_at: '2026-06-20T10:00:00.000Z',
+    });
+    const reply = { header: jest.fn() };
+
+    await expect(
+      controller.createMessage(
+        {
+          name: 'Customer',
+          mobile: '9999999999',
+          email: 'customer@example.com',
+          message: 'Hello',
+        },
+        {
+          ip: '203.0.113.10',
+          headers: {},
+        } as FastifyRequest,
+        reply as unknown as FastifyReply,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      id: 'message-2',
+    });
+
+    expect(recaptcha.verify).toHaveBeenCalledWith(
+      undefined,
+      'contact_message',
+      '203.0.113.10',
+    );
+    expect(service.createMessage).toHaveBeenCalledWith({
+      name: 'Customer',
+      mobile: '9999999999',
+      email: 'customer@example.com',
+      message: 'Hello',
+    });
+  });
 });

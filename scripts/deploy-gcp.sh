@@ -38,8 +38,7 @@ fi
 readonly BUSINESS_ALLOWED_EMAILS
 
 if [[ -z "$RECAPTCHA_SITE_KEY" ]]; then
-  echo "Error: RECAPTCHA_ENTERPRISE_SITE_KEY is required." >&2
-  exit 1
+  echo "Warning: RECAPTCHA_ENTERPRISE_SITE_KEY is not set; contact form CAPTCHA verification will be skipped." >&2
 fi
 
 if ! command -v gcloud >/dev/null 2>&1; then

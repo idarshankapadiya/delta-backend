@@ -22,6 +22,8 @@ The catalog backend owns public catalog metadata, private PDF storage, public th
 - The frontend restores header login state through `GET /api/catalog/access/me` because the cookie is HttpOnly.
 - Admin upload/update/delete is currently protected by `x-backend-admin-token`; the future browser business UI should use a separate backend business session wrapper.
 - Contact form messages are stored server-side in Firestore database `client-message-db`, collection `contact_messages`.
+- Contact form spam protection is currently origin checks plus rate limits; reCAPTCHA Enterprise is optional and only enforced when `RECAPTCHA_ENTERPRISE_SITE_KEY` is configured.
+- Contact-message OTP is planned but not part of the current deployment.
 - Backward compatibility is not kept unless a future task explicitly asks for it.
 
 ## Implemented Files
@@ -70,6 +72,11 @@ CATALOG_ACCESS_TTL_SECONDS=15552000
 GOOGLE_CLIENT_ID=google-web-client-id.apps.googleusercontent.com
 FIRESTORE_DATABASE_ID=client-message-db
 
+# Optional current contact-form CAPTCHA. Leave unset until a production key is created.
+RECAPTCHA_ENTERPRISE_PROJECT_ID=deweb-preview1
+RECAPTCHA_ENTERPRISE_SITE_KEY=
+RECAPTCHA_ENTERPRISE_MIN_SCORE=0.5
+
 CATALOG_OTP_TTL_SECONDS=600
 CATALOG_OTP_RESEND_AFTER_SECONDS=60
 CATALOG_OTP_MAX_ATTEMPTS=5
@@ -82,6 +89,7 @@ CATALOG_MASTER_OTP_CODE=190399
 - `CATALOG_SIGNED_URL_TTL_SECONDS` defaults to 900 seconds when unset.
 - `CATALOG_ACCESS_TTL_SECONDS` defaults to 180 days when unset.
 - Provider-specific OTP env vars are supported for SES, ZeptoMail, Meta Cloud API, and generic HTTP WhatsApp providers.
+- `RECAPTCHA_ENTERPRISE_SITE_KEY` is optional for the current deployment. When unset, `POST /api/message` skips CAPTCHA verification and relies on origin checks plus rate limits.
 - Production should provide secrets through deployment env/secrets, not frontend values or Postman.
 
 ## Message Endpoints
@@ -89,8 +97,10 @@ CATALOG_MASTER_OTP_CODE=190399
 
 - Writes one document to Firestore database `client-message-db`, collection `contact_messages`.
 - Adds backend-side `created_at`.
-- Does not verify email ownership, phone ownership, or OTP.
-- Browser requests are limited by the same allowed-origin guard pattern used by catalog POST routes.
+- Does not verify email ownership, phone ownership, or OTP in the current deployment.
+- Browser requests require the public-site `Origin`.
+- In-memory rate limits apply before and after optional CAPTCHA verification.
+- `captcha_token` is optional. If `RECAPTCHA_ENTERPRISE_SITE_KEY` is unset, the backend ignores CAPTCHA. If the site key is set, the backend requires a valid reCAPTCHA Enterprise token for action `contact_message`.
 - Required fields: `name`, `mobile`, `email`, and `message`.
 
 ### Get messages endpoint
@@ -375,6 +385,7 @@ Thumbnail generation:
 
 - Browser catalog POST requests require an allowed `Origin`; no-origin local tooling requests are allowed.
 - In-memory rate limiting applies to inquiry, Google access, OTP request/verify, signed URL access, downloads, and invalid document selections.
+- Contact message submissions require the public-site `Origin` and use IP/contact rate limits. reCAPTCHA Enterprise adds a score check only when configured.
 - Current rate-limit responses return `429` but do not include `Retry-After`.
 - Signed URL generation has an hourly limit per IP.
 - Download has a daily limit per access session.
@@ -407,6 +418,7 @@ Thumbnail generation:
 
 - `catalog_access` sessions are stored in memory, so backend restarts clear active access before browser cookie expiry.
 - OTP challenges and rate limits are stored in memory, so multiple backend instances will not share that state.
+- Contact-message CAPTCHA is optional in the current deployment, so automated submissions are limited by origin checks and rate limits until OTP or mandatory CAPTCHA is enabled.
 - GCS CORS is not required for direct browser PDF viewing, but it will be needed if the frontend fetches signed PDFs as blobs.
 - Replacing a PDF with a different filename changes the derived thumbnail URL.
 - GCS multi-object moves are copy-before-delete and cannot be fully atomic; failed source cleanup can temporarily leave duplicate physical objects.
@@ -451,7 +463,10 @@ Thumbnail migration decision:
 ## Production Follow-Ups
 
 - Configure the production Google OAuth client id.
+- Decide whether contact-message protection should remain optional, become mandatory reCAPTCHA, or move to OTP before public launch.
+- If reCAPTCHA is enabled, create a production score-based web key, grant `backend-api-sa@deweb-preview1.iam.gserviceaccount.com` `roles/recaptchaenterprise.agent`, and deploy both backend and UI with the same site key.
 - Enable and verify real OTP delivery before using OTP as a public fallback.
+- Add contact-message OTP verification before persisting messages if OTP replaces CAPTCHA.
 - Remove or disable temporary master OTP behavior before public production use.
 - Choose and configure the final email OTP provider.
 - Choose and configure the final WhatsApp OTP provider and approved authentication template.
@@ -463,6 +478,8 @@ Thumbnail migration decision:
 ## Verification
 
 - Backend startup logs include the listening host/port and local `/api` URL.
+- `POST /api/message` succeeds without `captcha_token` when `RECAPTCHA_ENTERPRISE_SITE_KEY` is unset and rate limits allow the request.
+- `POST /api/message` requires a valid `captcha_token` when `RECAPTCHA_ENTERPRISE_SITE_KEY` is set.
 - Catalog metadata APIs return public thumbnail URLs.
 - Public thumbnails load directly from `darshanent-thumbnail-dir`.
 - Inquiry-only access does not set `catalog_access`.

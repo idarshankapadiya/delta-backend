@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   ServiceUnavailableException,
@@ -22,10 +23,21 @@ export class RecaptchaEnterpriseService {
   });
 
   async verify(
-    token: string,
+    token: string | undefined,
     expectedAction: string,
     ip: string,
   ): Promise<void> {
+    const projectId = process.env.RECAPTCHA_ENTERPRISE_PROJECT_ID?.trim();
+    const siteKey = process.env.RECAPTCHA_ENTERPRISE_SITE_KEY?.trim();
+
+    if (!siteKey) {
+      return;
+    }
+
+    if (!token?.trim()) {
+      throw new BadRequestException('Contact verification token is required');
+    }
+
     if (
       process.env.NODE_ENV !== 'production' &&
       process.env.RECAPTCHA_ENTERPRISE_BYPASS_FOR_LOCAL === 'true' &&
@@ -34,10 +46,7 @@ export class RecaptchaEnterpriseService {
       return;
     }
 
-    const projectId = process.env.RECAPTCHA_ENTERPRISE_PROJECT_ID?.trim();
-    const siteKey = process.env.RECAPTCHA_ENTERPRISE_SITE_KEY?.trim();
-
-    if (!projectId || !siteKey) {
+    if (!projectId) {
       throw new ServiceUnavailableException(
         'reCAPTCHA Enterprise is not configured',
       );
