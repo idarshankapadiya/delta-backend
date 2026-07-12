@@ -218,6 +218,46 @@ BACKEND_ADMIN_TOKEN
 
 `BUSINESS_UI_CSRF_SECRET` must contain at least 32 characters.
 
+Create the CSRF secret when it is missing:
+
+```bash
+printf '%s' "$(openssl rand -base64 48)" |
+  gcloud secrets create BUSINESS_UI_CSRF_SECRET \
+    --project=deweb-preview1 \
+    --replication-policy=automatic \
+    --data-file=-
+```
+
+Grant the Cloud Run runtime service account access to read it:
+
+```bash
+gcloud secrets add-iam-policy-binding BUSINESS_UI_CSRF_SECRET \
+  --project=deweb-preview1 \
+  --member="serviceAccount:backend-api-sa@deweb-preview1.iam.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
+```
+
+If the grant command returns:
+
+```text
+Secret [projects/157686675107/secrets/BUSINESS_UI_CSRF_SECRET] not found
+```
+
+then either the secret does not exist in `deweb-preview1` or the active
+deployer account cannot view/manage it. Check first:
+
+```bash
+gcloud secrets list \
+  --project=deweb-preview1 \
+  --filter="name:BUSINESS_UI_CSRF_SECRET"
+```
+
+If the secret is absent, create it with the command above. If creation or IAM
+updates fail with permission errors, grant the deployer Secret Manager Admin
+or have a project administrator create the secret and add the
+`roles/secretmanager.secretAccessor` binding for
+`backend-api-sa@deweb-preview1.iam.gserviceaccount.com`.
+
 Do not put secret values in:
 
 - Git;
@@ -545,3 +585,29 @@ The caller is missing Cloud Run `roles/run.invoker` or a valid identity token.
 ### Admin service returns `401` from NestJS
 
 IAM succeeded, but `x-backend-admin-token` is missing or incorrect.
+
+### Deploy fails on `BUSINESS_UI_CSRF_SECRET`
+
+Error:
+
+```text
+Permission denied on secret: projects/157686675107/secrets/BUSINESS_UI_CSRF_SECRET/versions/latest
+```
+
+The Cloud Run revision service account cannot access the secret. Confirm the
+secret exists and grant:
+
+```bash
+gcloud secrets list \
+  --project=deweb-preview1 \
+  --filter="name:BUSINESS_UI_CSRF_SECRET"
+
+gcloud secrets add-iam-policy-binding BUSINESS_UI_CSRF_SECRET \
+  --project=deweb-preview1 \
+  --member="serviceAccount:backend-api-sa@deweb-preview1.iam.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
+```
+
+If the grant command returns `404 Secret not found`, create the secret first
+or ask a project administrator to create it. A `404` can also indicate that the
+active deployer account lacks Secret Manager visibility/admin permissions.
