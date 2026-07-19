@@ -1,0 +1,4 @@
+defaultUrlRedirect:
+  httpsRedirect: true
+  redirectResponseCode: MOVED_PERMANENTLY_DEFAULT
+name: delta-ui-http-redirect-url-map

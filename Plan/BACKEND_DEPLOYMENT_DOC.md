@@ -37,21 +37,23 @@ the Firebase Hosting proxy.
 
 ## Current state: 19 July 2026
 
-Read-only production checks showed:
+Production deployment and verification showed:
 
 | Check                                          | Current result                                          |
 | ---------------------------------------------- | ------------------------------------------------------- |
 | `delta-backend`                                | Exists                                                  |
-| Latest ready revision                          | `delta-backend-00011-2gx`                               |
+| Latest ready revision                          | `delta-backend-00012-78r`                               |
 | Runtime service account                        | `backend-api-sa@deweb-preview1.iam.gserviceaccount.com` |
-| Ingress                                        | `all`                                                   |
-| Default `run.app` URL                          | Enabled                                                 |
+| Ingress                                        | `internal-and-cloud-load-balancing`                     |
+| Default `run.app` URL                          | Disabled; former URL returns `404`                      |
 | Load-balancer IP                               | `34.117.140.122`                                        |
 | Serverless API NEG                             | `delta-backend-neg`                                     |
 | Firebase UI internet NEG                       | `delta-ui-firebase-neg`                                 |
-| URL map                                        | `delta-ui-url-map`                                      |
-| HTTP pinned-IP API/UI checks                   | Pass                                                    |
-| HTTPS certificate                              | `PROVISIONING`; domains `FAILED_NOT_VISIBLE`            |
+| HTTPS URL map                                  | `delta-ui-url-map`                                      |
+| HTTP redirect URL map                          | `delta-ui-http-redirect-url-map`                        |
+| HTTPS API/UI checks                            | Pass on apex and `www`                                  |
+| HTTP-to-HTTPS redirect                         | Permanent redirect on apex and `www`                    |
+| HTTPS certificate                              | `ACTIVE` for apex and `www`                             |
 | Apex DNS                                       | Public `A` record points to `34.117.140.122`            |
 | `www` DNS                                      | Public `A` record points to `34.117.140.122`            |
 | `delta-backend-admin`                          | Does not exist                                          |
@@ -60,17 +62,15 @@ Read-only production checks showed:
 | `BACKEND_ADMIN_TOKEN`                          | Exists                                                  |
 | Public runtime access to `BACKEND_ADMIN_TOKEN` | Removed                                                 |
 | Admin runtime access to `BACKEND_ADMIN_TOKEN`  | Granted                                                 |
-| Current Firebase `/api/health`                 | Returns backend health JSON                             |
-| Pinned load-balancer `/api/health`             | Returns backend health JSON                             |
-| Pinned load-balancer public UI                 | Returns the Firebase-hosted UI                          |
+| Production `/api/health`                       | Returns backend health JSON                             |
+| Production public UI                           | Returns the Firebase-hosted UI                          |
 
-Revision `delta-backend-00011-2gx` contains both public and authenticated
-business APIs and serves 100% of Cloud Run traffic. The load balancer is
-provisioned, production DNS has been cut over, and Google and Cloudflare public
-resolvers return the load-balancer IP for both hosts. Certificate activation
-and HTTPS verification remain before Cloud Run ingress can be restricted and
-its default URL disabled. The separate `delta-backend-admin` service still
-needs its first deployment only if internal operator routes are required.
+Revision `delta-backend-00012-78r` contains both public and authenticated
+business APIs and serves 100% of Cloud Run traffic. Production DNS, managed
+TLS, HTTPS UI/API routing, HTTP-to-HTTPS redirect, load-balancer-only Cloud Run
+ingress, and default-URL removal are complete. The separate
+`delta-backend-admin` service still needs its first deployment only if internal
+operator routes are required.
 
 The admin deployment script now requires
 `backend-admin-api-sa@deweb-preview1.iam.gserviceaccount.com` and refuses to
@@ -314,25 +314,29 @@ Implemented load-balancer resources:
 | Firebase internet NEG | `delta-ui-firebase-neg`          |
 | API backend service   | `delta-backend-lb-service`       |
 | UI backend service    | `delta-ui-firebase-lb-service`   |
-| URL map               | `delta-ui-url-map`               |
+| HTTPS URL map         | `delta-ui-url-map`               |
+| HTTP redirect URL map | `delta-ui-http-redirect-url-map` |
 | HTTP proxy            | `delta-ui-http-proxy`            |
 | HTTPS proxy           | `delta-ui-https-proxy`           |
 | HTTP forwarding rule  | `delta-ui-http-forwarding-rule`  |
 | HTTPS forwarding rule | `delta-ui-https-forwarding-rule` |
 
-The URL map sends `/api` and `/api/*` directly to the Cloud Run NEG and
+The HTTPS URL map sends `/api` and `/api/*` directly to the Cloud Run NEG and
 everything else to `deweb-preview1.web.app` through the Firebase internet NEG.
-Pinned-IP HTTP checks against `34.117.140.122` pass for the UI, public APIs,
-business CORS/auth boundaries, and cookie forwarding.
+The HTTP proxy uses the separate redirect URL map and permanently redirects
+every request to the equivalent HTTPS URL. Its importable configuration is
+`scripts/gcp/delta-ui-http-redirect-url-map.yaml`.
 
-DNS cutover completed on 19 July 2026. Remaining cutover:
+Production cutover completed on 19 July 2026:
 
-1. Wait until `delta-ui-cert` reports `ACTIVE` for both names.
-2. Verify HTTPS UI and API routing.
-3. Run `npm run deploy:gcp`; the script sets Cloud Run ingress to
-   `internal-and-cloud-load-balancing` and disables its default URL.
-4. Change the HTTP frontend to redirect to HTTPS.
-5. Attach a reviewed Cloud Armor policy if edge WAF rules are required.
+1. Apex and `www` DNS resolve to `34.117.140.122`.
+2. `delta-ui-cert` is `ACTIVE` for both names.
+3. HTTPS UI, public API, business API/CORS, catalog, and route-boundary checks
+   pass.
+4. HTTP permanently redirects to HTTPS while preserving host, path, and query.
+5. Cloud Run ingress is load-balancer-only and its default URL is disabled.
+
+Attach a reviewed Cloud Armor policy later if edge WAF rules are required.
 
 Verification must inspect JSON, not only HTTP status. Firebase currently returns
 the SPA HTML with status `200` for unknown `/api` paths.
