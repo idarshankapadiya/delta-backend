@@ -51,9 +51,9 @@ Read-only production checks showed:
 | Firebase UI internet NEG                       | `delta-ui-firebase-neg`                                 |
 | URL map                                        | `delta-ui-url-map`                                      |
 | HTTP pinned-IP API/UI checks                   | Pass                                                    |
-| HTTPS certificate                              | Provisioning; DNS is not cut over                       |
-| Apex DNS                                       | Still points to Firebase Hosting                        |
-| `www` DNS                                      | Still aliases Firebase Hosting                          |
+| HTTPS certificate                              | `PROVISIONING`; domains `FAILED_NOT_VISIBLE`            |
+| Apex DNS                                       | Public `A` record points to `34.117.140.122`            |
+| `www` DNS                                      | Public `A` record points to `34.117.140.122`            |
 | `delta-backend-admin`                          | Does not exist                                          |
 | Dedicated admin runtime account                | Exists                                                  |
 | `BUSINESS_UI_CSRF_SECRET`                      | Exists                                                  |
@@ -66,8 +66,9 @@ Read-only production checks showed:
 
 Revision `delta-backend-00011-2gx` contains both public and authenticated
 business APIs and serves 100% of Cloud Run traffic. The load balancer is
-provisioned and validated without changing production DNS. DNS cutover and
-certificate activation remain before Cloud Run ingress can be restricted and
+provisioned, production DNS has been cut over, and Google and Cloudflare public
+resolvers return the load-balancer IP for both hosts. Certificate activation
+and HTTPS verification remain before Cloud Run ingress can be restricted and
 its default URL disabled. The separate `delta-backend-admin` service still
 needs its first deployment only if internal operator routes are required.
 
@@ -94,8 +95,9 @@ Behavior:
 - uses Node 24 from `package.json`;
 - attaches
   `backend-api-sa@deweb-preview1.iam.gserviceaccount.com`;
-- refuses deployment unless both production frontend hosts resolve to
-  `34.117.140.122`;
+- refuses deployment unless both Google and Cloudflare public DNS resolvers
+  return `34.117.140.122` for both production frontend hosts;
+- refuses deployment until `delta-ui-cert` is `ACTIVE`;
 - allows unauthenticated network invocation because public routes exist;
 - relies on application guards for business authorization;
 - restricts ingress to internal/load-balancer traffic;
@@ -323,17 +325,14 @@ everything else to `deweb-preview1.web.app` through the Firebase internet NEG.
 Pinned-IP HTTP checks against `34.117.140.122` pass for the UI, public APIs,
 business CORS/auth boundaries, and cookie forwarding.
 
-Remaining cutover:
+DNS cutover completed on 19 July 2026. Remaining cutover:
 
-1. Replace the apex `A` record `199.36.158.100` with `34.117.140.122`.
-2. Replace the `www` CNAME to `deweb-preview1.web.app` with an `A` record to
-   `34.117.140.122`.
-3. Wait until `delta-ui-cert` reports `ACTIVE` for both names.
-4. Verify HTTPS UI and API routing.
-5. Change the HTTP frontend to redirect to HTTPS.
-6. Set Cloud Run ingress to `internal-and-cloud-load-balancing` and disable its
-   default URL.
-7. Attach a reviewed Cloud Armor policy if edge WAF rules are required.
+1. Wait until `delta-ui-cert` reports `ACTIVE` for both names.
+2. Verify HTTPS UI and API routing.
+3. Run `npm run deploy:gcp`; the script sets Cloud Run ingress to
+   `internal-and-cloud-load-balancing` and disables its default URL.
+4. Change the HTTP frontend to redirect to HTTPS.
+5. Attach a reviewed Cloud Armor policy if edge WAF rules are required.
 
 Verification must inspect JSON, not only HTTP status. Firebase currently returns
 the SPA HTML with status `200` for unknown `/api` paths.
@@ -416,11 +415,14 @@ export RECAPTCHA_ENTERPRISE_SITE_KEY="<production-site-key>"
 ### 5. Deploy the public/business service
 
 The deployment script requires both production hosts to resolve to the
-load-balancer IP. Confirm DNS and certificate state first:
+load-balancer IP through Google and Cloudflare public DNS, and requires the
+certificate to be active. Confirm DNS and certificate state first:
 
 ```bash
-dig +short A darshanent.co.in
-dig +short A www.darshanent.co.in
+dig +short A darshanent.co.in @8.8.8.8
+dig +short A www.darshanent.co.in @8.8.8.8
+dig +short A darshanent.co.in @1.1.1.1
+dig +short A www.darshanent.co.in @1.1.1.1
 
 gcloud compute ssl-certificates describe delta-ui-cert \
   --project deweb-preview1 \

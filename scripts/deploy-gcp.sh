@@ -8,6 +8,8 @@ readonly SERVICE_NAME="delta-backend"
 readonly RUN_SERVICE_ACCOUNT="backend-api-sa@deweb-preview1.iam.gserviceaccount.com"
 readonly BUSINESS_CSRF_SECRET="BUSINESS_UI_CSRF_SECRET"
 readonly LOAD_BALANCER_IP="34.117.140.122"
+readonly LOAD_BALANCER_CERTIFICATE="delta-ui-cert"
+readonly DNS_RESOLVERS=("8.8.8.8" "1.1.1.1")
 
 readonly FRONTEND_URL="https://darshanent.co.in"
 readonly PUBLIC_FRONTEND_ORIGINS="${FRONTEND_URL},https://www.darshanent.co.in"
@@ -54,17 +56,31 @@ if ! command -v dig >/dev/null 2>&1; then
 fi
 
 for frontend_host in "darshanent.co.in" "www.darshanent.co.in"; do
-  resolved_ips="$(dig +short A "$frontend_host" | sort -u)"
+  for dns_resolver in "${DNS_RESOLVERS[@]}"; do
+    resolved_ips="$(dig +short A "$frontend_host" "@$dns_resolver" | sort -u)"
 
-  if ! grep -Fqx "$LOAD_BALANCER_IP" <<<"$resolved_ips"; then
-    echo "Error: $frontend_host must resolve to load balancer IP $LOAD_BALANCER_IP before deployment." >&2
-    exit 1
-  fi
+    if ! grep -Fqx "$LOAD_BALANCER_IP" <<<"$resolved_ips"; then
+      echo "Error: $frontend_host must resolve to load balancer IP $LOAD_BALANCER_IP through DNS resolver $dns_resolver before deployment." >&2
+      exit 1
+    fi
+  done
 done
 
 ACTIVE_ACCOUNT="$(gcloud auth list --filter="status:ACTIVE" --format="value(account)" | head -n 1)"
 if [[ -z "$ACTIVE_ACCOUNT" ]]; then
   echo "Error: no active gcloud account. Run 'gcloud auth login' first." >&2
+  exit 1
+fi
+
+LOAD_BALANCER_CERTIFICATE_STATUS="$(
+  gcloud compute ssl-certificates describe "$LOAD_BALANCER_CERTIFICATE" \
+    --project "$PROJECT_ID" \
+    --global \
+    --format="value(managed.status)"
+)"
+
+if [[ "$LOAD_BALANCER_CERTIFICATE_STATUS" != "ACTIVE" ]]; then
+  echo "Error: load balancer certificate '$LOAD_BALANCER_CERTIFICATE' must be ACTIVE before Cloud Run ingress is restricted and its default URL is disabled (current status: $LOAD_BALANCER_CERTIFICATE_STATUS)." >&2
   exit 1
 fi
 
