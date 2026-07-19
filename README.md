@@ -18,10 +18,10 @@ boundaries:
 - `delta-backend-admin` exposes only `/api/internal/**` and `/api/health`. It
   requires Cloud Run IAM plus `x-backend-admin-token`.
 
-The current scripts still attach the same runtime service account to both
-services. Before final production hardening, use a dedicated admin runtime
-service account for `delta-backend-admin` and remove
-`BACKEND_ADMIN_TOKEN` access from the public service account.
+The deployment scripts require separate runtime identities. The internal
+service uses `backend-admin-api-sa@deweb-preview1.iam.gserviceaccount.com`;
+its preflight requires that identity to have `BACKEND_ADMIN_TOKEN` access and
+rejects deployment while the public runtime identity can read that secret.
 
 ## Local setup
 
@@ -111,6 +111,9 @@ the current local working tree.
 It:
 
 - requires authenticated Cloud Run invocation;
+- uses the dedicated `backend-admin-api-sa` runtime service account;
+- verifies that only the admin runtime identity, not the public runtime
+  identity, can read `BACKEND_ADMIN_TOKEN`;
 - enables only `/api/internal/**` and `/api/health` at application level;
 - maps `BACKEND_ADMIN_TOKEN` and `BUSINESS_UI_CSRF_SECRET` from Secret Manager;
 - keeps browser origins blocked from internal routes;
@@ -144,21 +147,18 @@ They do not create or configure:
 - runtime service-account IAM permissions;
 - operator `roles/run.invoker` grants.
 
-### Current deployment warning
+### Current deployment state
 
-As verified on 5 July 2026:
+As verified on 19 July 2026:
 
 - `delta-backend` exists and its default `run.app` URL is still enabled;
 - `delta-backend-admin` does not exist yet;
-- `BUSINESS_UI_CSRF_SECRET` does not exist yet, so both scripts would fail;
-- the public runtime service account currently has access to
-  `BACKEND_ADMIN_TOKEN`;
-- `https://darshanent.co.in/api/health` returns the public UI HTML rather than
-  backend health JSON.
-
-Do **not** run `npm run deploy:gcp` until the load balancer routes `/api` and
-`/api/*` to `delta-backend`. The script disables the default `run.app` URL, so
-running it before that route exists can make the public API unreachable.
+- `BUSINESS_UI_CSRF_SECRET` exists;
+- the dedicated `backend-admin-api-sa` identity exists and has the documented
+  Firestore, catalog-bucket, signing, and secret permissions;
+- only the dedicated admin runtime identity can read `BACKEND_ADMIN_TOKEN`;
+- `https://darshanent.co.in/api/health` returns backend health JSON, confirming
+  that the selected load-balancer API route is active.
 
 ## Which deployment command should I run?
 

@@ -1,25 +1,35 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication } from '@nestjs/common';
+import {
+  FastifyAdapter,
+  NestFastifyApplication,
+} from '@nestjs/platform-fastify';
 import request from 'supertest';
-import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
 import type { ApiIndex } from './../src/app.service';
 
 describe('AppController (e2e)', () => {
-  let app: INestApplication<App>;
+  let app: NestFastifyApplication;
 
   beforeEach(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
 
-    app = moduleFixture.createNestApplication();
+    app = moduleFixture.createNestApplication<NestFastifyApplication>(
+      new FastifyAdapter(),
+    );
+    app.setGlobalPrefix('api');
     await app.init();
+    await app.getHttpAdapter().getInstance().ready();
   });
 
-  it('/ (GET)', () => {
+  afterEach(async () => {
+    await app.close();
+  });
+
+  it('/api (GET)', () => {
     return request(app.getHttpServer())
-      .get('/')
+      .get('/api')
       .expect(200)
       .expect((response) => {
         const body = response.body as ApiIndex;
@@ -45,5 +55,43 @@ describe('AppController (e2e)', () => {
           ]),
         );
       });
+  });
+
+  it('registers every preserved public, business, and internal endpoint path', () => {
+    const server = app.getHttpAdapter().getInstance();
+    const expectedRoutes = [
+      ['GET', '/api'],
+      ['GET', '/api/health'],
+      ['POST', '/api/message'],
+      ['GET', '/api/catalog/all'],
+      ['POST', '/api/catalog/library'],
+      ['POST', '/api/catalog/access'],
+      ['POST', '/api/catalog/access/google'],
+      ['POST', '/api/catalog/access/google/redirect'],
+      ['GET', '/api/catalog/access/me'],
+      ['POST', '/api/catalog/access/request-otp'],
+      ['POST', '/api/catalog/access/verify-otp'],
+      ['POST', '/api/catalog/documents/access'],
+      ['POST', '/api/catalog/access/logout'],
+      ['POST', '/api/business/auth/google'],
+      ['GET', '/api/business/auth/me'],
+      ['POST', '/api/business/auth/logout'],
+      ['GET', '/api/business/catalog/all'],
+      ['POST', '/api/business/catalog/documents'],
+      ['POST', '/api/business/catalog/documents/access'],
+      ['PUT', '/api/business/catalog/documents/:document_id'],
+      ['PUT', '/api/business/catalog/companies/:company_slug'],
+      ['DELETE', '/api/business/catalog/documents/:document_id'],
+      ['GET', '/api/business/messages'],
+      ['GET', '/api/internal/messages'],
+      ['POST', '/api/internal/catalog/documents'],
+      ['PUT', '/api/internal/catalog/documents/:document_id'],
+      ['PUT', '/api/internal/catalog/companies/:company_slug'],
+      ['DELETE', '/api/internal/catalog/documents/:document_id'],
+    ] as const;
+
+    for (const [method, url] of expectedRoutes) {
+      expect(server.hasRoute({ method, url })).toBe(true);
+    }
   });
 });

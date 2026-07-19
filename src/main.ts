@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import multipart from '@fastify/multipart';
 import cookie from '@fastify/cookie';
+import helmet from '@fastify/helmet';
 import {
   FastifyAdapter,
   NestFastifyApplication,
@@ -9,7 +10,7 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { getHttpHost, getHttpPort } from './config/http.config';
 import { getCatalogUploadMaxBytes } from './config/catalog.config';
-import { getCorsOrigins } from './config/origin.config';
+import { handleCorsOrigin } from './config/cors.config';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -18,6 +19,9 @@ async function bootstrap() {
     new FastifyAdapter(),
   );
 
+  await app.register(helmet, {
+    contentSecurityPolicy: false,
+  });
   await app.register(multipart, {
     limits: {
       files: 1,
@@ -27,17 +31,7 @@ async function bootstrap() {
   await app.register(cookie);
 
   app.enableCors({
-    origin: (
-      origin: string | undefined,
-      callback: (error: Error | null, allow: boolean) => void,
-    ) => {
-      if (!origin || getCorsOrigins().includes(origin)) {
-        callback(null, true);
-        return;
-      }
-
-      callback(new Error('Origin is not allowed by CORS'), false);
-    },
+    origin: handleCorsOrigin,
     credentials: true,
   });
 

@@ -51,6 +51,10 @@ describe('AppController', () => {
           }),
           expect.objectContaining({
             method: 'POST',
+            path: '/api/catalog/access/logout',
+          }),
+          expect.objectContaining({
+            method: 'POST',
             path: '/api/catalog/access/google/redirect',
           }),
         ]),

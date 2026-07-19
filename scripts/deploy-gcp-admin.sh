@@ -5,7 +5,8 @@ set -Eeuo pipefail
 readonly PROJECT_ID="deweb-preview1"
 readonly REGION="asia-south1"
 readonly SERVICE_NAME="delta-backend-admin"
-readonly RUN_SERVICE_ACCOUNT="backend-api-sa@deweb-preview1.iam.gserviceaccount.com"
+readonly RUN_SERVICE_ACCOUNT="backend-admin-api-sa@deweb-preview1.iam.gserviceaccount.com"
+readonly PUBLIC_RUN_SERVICE_ACCOUNT="backend-api-sa@deweb-preview1.iam.gserviceaccount.com"
 readonly ADMIN_TOKEN_SECRET="BACKEND_ADMIN_TOKEN"
 readonly BUSINESS_CSRF_SECRET="BUSINESS_UI_CSRF_SECRET"
 readonly PRIVATE_BUCKET="darshanent_catalog_dir"
@@ -28,6 +29,30 @@ fi
 ACTIVE_ACCOUNT="$(gcloud auth list --filter="status:ACTIVE" --format="value(account)" | head -n 1)"
 if [[ -z "$ACTIVE_ACCOUNT" ]]; then
   echo "Error: no active gcloud account. Run 'gcloud auth login' first." >&2
+  exit 1
+fi
+
+if ! gcloud iam service-accounts describe "$RUN_SERVICE_ACCOUNT" \
+  --project "$PROJECT_ID" >/dev/null 2>&1; then
+  echo "Error: dedicated admin runtime service account '$RUN_SERVICE_ACCOUNT' does not exist." >&2
+  exit 1
+fi
+
+ADMIN_TOKEN_ACCESSORS="$(
+  gcloud secrets get-iam-policy "$ADMIN_TOKEN_SECRET" \
+    --project "$PROJECT_ID" \
+    --flatten="bindings[].members" \
+    --filter="bindings.role:roles/secretmanager.secretAccessor" \
+    --format="value(bindings.members)"
+)"
+
+if ! grep -Fqx "serviceAccount:$RUN_SERVICE_ACCOUNT" <<<"$ADMIN_TOKEN_ACCESSORS"; then
+  echo "Error: dedicated admin runtime service account cannot access '$ADMIN_TOKEN_SECRET'." >&2
+  exit 1
+fi
+
+if grep -Fqx "serviceAccount:$PUBLIC_RUN_SERVICE_ACCOUNT" <<<"$ADMIN_TOKEN_ACCESSORS"; then
+  echo "Error: public runtime service account still has access to '$ADMIN_TOKEN_SECRET'." >&2
   exit 1
 fi
 

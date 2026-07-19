@@ -28,6 +28,7 @@
     "@aws-sdk/client-sesv2": "^3.1072.0",
     "@fastify/cookie": "^11.0.2",
     "@fastify/cors": "^11.2.0",
+    "@fastify/helmet": "^13.1.0",
     "@fastify/multipart": "^10.0.0",
     "@google-cloud/firestore": "^8.6.0",
     "@google-cloud/storage": "^7.21.0",

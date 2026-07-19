@@ -15,8 +15,6 @@ import {
 } from 'node:crypto';
 import { ulid } from 'ulid';
 
-const DEFAULT_CATALOG_MASTER_OTP = '190399';
-
 type CatalogOtpChannel = 'whatsapp' | 'email';
 type CatalogAuthProvider = 'google' | 'whatsapp_otp' | 'email_otp';
 
@@ -29,7 +27,6 @@ interface CatalogInquiry {
 
 interface CatalogOtpRequest extends CatalogInquiry {
   channel: CatalogOtpChannel;
-  otp?: string;
 }
 
 interface CatalogAccessRequestContext {
@@ -228,50 +225,6 @@ export class CatalogAccessService {
     };
   }
 
-  createMasterOtpAccess(
-    inquiry: CatalogOtpRequest,
-    context: CatalogAccessRequestContext,
-  ): CatalogSessionGrant {
-    if (!inquiry.otp || !this.isMasterOtp(inquiry.otp)) {
-      this.audit(
-        inquiry,
-        context,
-        'master_otp_verification_failed',
-        this.getOtpAuthProvider(inquiry.channel),
-        inquiry.channel,
-      );
-      throw new UnauthorizedException('Invalid OTP');
-    }
-
-    this.getOtpContactKey(inquiry);
-
-    const authProvider = this.getOtpAuthProvider(inquiry.channel);
-    const session = this.createSession(
-      {
-        name: inquiry.name,
-        mobile: inquiry.mobile?.trim(),
-        email: inquiry.email?.trim().toLowerCase(),
-        authProvider,
-      },
-      context,
-    );
-
-    this.audit(
-      inquiry,
-      context,
-      'master_otp_verified',
-      authProvider,
-      inquiry.channel,
-    );
-
-    return {
-      ...session,
-      name: inquiry.name,
-      mobile: inquiry.mobile?.trim(),
-      email: inquiry.email?.trim().toLowerCase(),
-    };
-  }
-
   verifyOtp(
     input: {
       challenge_id: string;
@@ -368,6 +321,12 @@ export class CatalogAccessService {
     return this.getAccessSession(token) !== null;
   }
 
+  revokeAccessSession(token: string | undefined): void {
+    if (token) {
+      this.sessions.delete(token);
+    }
+  }
+
   getAccessSession(token: string): CatalogAccessSessionSummary | null {
     const session = this.sessions.get(token);
 
@@ -423,18 +382,6 @@ export class CatalogAccessService {
   }
 
   private createOtp(): string {
-    const configuredOtp =
-      process.env.CATALOG_MASTER_OTP_CODE?.trim() ??
-      process.env.CATALOG_DEV_OTP_CODE?.trim();
-
-    if (configuredOtp) {
-      return configuredOtp;
-    }
-
-    if (this.isOtpDeliveryDisabled()) {
-      return DEFAULT_CATALOG_MASTER_OTP;
-    }
-
     return String(randomInt(0, 1_000_000)).padStart(6, '0');
   }
 
@@ -449,10 +396,6 @@ export class CatalogAccessService {
   }
 
   private isOtpMatch(challenge: CatalogOtpChallenge, otp: string): boolean {
-    if (this.isMasterOtp(otp)) {
-      return true;
-    }
-
     const expected = Buffer.from(challenge.hashedOtp, 'hex');
     const actual = Buffer.from(
       this.hashOtp(challenge.challengeId, challenge.contactKey, otp.trim()),
@@ -470,12 +413,11 @@ export class CatalogAccessService {
   ): boolean {
     if (challenge.channel === 'email') {
       return (
-        !input.email ||
-        input.email.trim().toLowerCase() === challenge.email?.toLowerCase()
+        input.email?.trim().toLowerCase() === challenge.email?.toLowerCase()
       );
     }
 
-    return !input.mobile || input.mobile.trim() === challenge.mobile;
+    return Boolean(input.mobile) && input.mobile?.trim() === challenge.mobile;
   }
 
   private getOtpContactKey(inquiry: CatalogOtpRequest): string {
@@ -503,10 +445,9 @@ export class CatalogAccessService {
     otp: string,
   ): Promise<void> {
     if (this.isOtpDeliveryDisabled()) {
-      this.logger.log(
-        `Catalog OTP delivery disabled for ${challenge.contactKey}; master OTP is active`,
+      throw new ServiceUnavailableException(
+        'Catalog OTP delivery is not enabled',
       );
-      return;
     }
 
     if (challenge.channel === 'email') {
@@ -807,16 +748,6 @@ export class CatalogAccessService {
     }
 
     return 'log';
-  }
-
-  private isMasterOtp(otp: string): boolean {
-    return otp.trim() === this.getMasterOtp();
-  }
-
-  private getMasterOtp(): string {
-    return (
-      process.env.CATALOG_MASTER_OTP_CODE?.trim() ?? DEFAULT_CATALOG_MASTER_OTP
-    );
   }
 
   private isOtpDeliveryDisabled(): boolean {

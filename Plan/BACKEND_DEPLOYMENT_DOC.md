@@ -31,51 +31,35 @@ Do not use Firebase Hosting rewrites for the API. Firebase Hosting strips
 incoming cookies other than `__session`, while this application intentionally
 uses separate HttpOnly business and public catalog cookies.
 
-## Current state: 5 July 2026
+## Current state: 19 July 2026
 
 Read-only production checks showed:
 
 | Check                                          | Current result                                          |
 | ---------------------------------------------- | ------------------------------------------------------- |
 | `delta-backend`                                | Exists                                                  |
-| Latest ready revision                          | `delta-backend-00006-d49`                               |
+| Latest ready revision                          | `delta-backend-00010-mhj`                               |
 | Runtime service account                        | `backend-api-sa@deweb-preview1.iam.gserviceaccount.com` |
 | Ingress                                        | `all`                                                   |
 | Default `run.app` URL                          | Enabled                                                 |
 | `delta-backend-admin`                          | Does not exist                                          |
-| `BUSINESS_UI_CSRF_SECRET`                      | Does not exist                                          |
+| Dedicated admin runtime account                | Exists                                                  |
+| `BUSINESS_UI_CSRF_SECRET`                      | Exists                                                  |
 | `BACKEND_ADMIN_TOKEN`                          | Exists                                                  |
-| Public runtime access to `BACKEND_ADMIN_TOKEN` | Currently granted                                       |
-| `https://darshanent.co.in/api/health`          | Returns frontend HTML, not backend JSON                 |
+| Public runtime access to `BACKEND_ADMIN_TOKEN` | Removed                                                 |
+| Admin runtime access to `BACKEND_ADMIN_TOKEN`  | Granted                                                 |
+| `https://darshanent.co.in/api/health`          | Returns backend health JSON                             |
 | Current Cloud Run `/api/health`                | Returns backend JSON                                    |
 
-Consequently, the repository is code-ready but the selected
-`darshanent.co.in/api` infrastructure is not ready.
+The public load-balancer API route and least-privilege runtime identities are
+ready. The separate `delta-backend-admin` service still needs its first
+deployment.
 
-Both deployment scripts currently attach
-`backend-api-sa@deweb-preview1.iam.gserviceaccount.com`. This works
-functionally, but it means a compromise of the public service identity could
-read `BACKEND_ADMIN_TOKEN`. For least privilege:
-
-1. create a dedicated runtime service account for `delta-backend-admin`;
-2. grant `BACKEND_ADMIN_TOKEN` access only to that admin identity;
-3. update `scripts/deploy-gcp-admin.sh` to use the admin identity;
-4. remove the public runtime identity from the admin secret policy.
-
-### Critical warning
-
-Do not run:
-
-```bash
-npm run deploy:gcp
-```
-
-until `/api` and `/api/*` are routed through the load balancer to
-`delta-backend`.
-
-The script changes ingress to `internal-and-cloud-load-balancing` and disables
-the default `run.app` URL. Without a working load-balancer path, that deployment
-can make the public API unreachable.
+The admin deployment script now requires
+`backend-admin-api-sa@deweb-preview1.iam.gserviceaccount.com` and refuses to
+deploy if the public runtime identity can still read `BACKEND_ADMIN_TOKEN`.
+The least-privilege identity and secret-policy setup is complete. Keep the
+admin deployment preflight in place so future policy drift fails closed.
 
 ## What the two scripts do
 
@@ -130,6 +114,9 @@ Behavior:
 
 - creates or updates `delta-backend-admin`;
 - deploys the current local source;
+- requires the dedicated `backend-admin-api-sa` runtime identity;
+- refuses deployment unless that identity can read `BACKEND_ADMIN_TOKEN` and
+  the public runtime identity cannot;
 - requires Cloud Run IAM authentication;
 - leaves its default URL enabled for approved operators;
 - exposes only `/api/internal/**` and `/api/health` at application level;
@@ -200,9 +187,9 @@ The runtime service account needs:
 The deployer needs permission to deploy Cloud Run services and
 `roles/iam.serviceAccountUser` on the runtime service account.
 
-The current admin script uses the public runtime service account. Replace it
-with a dedicated admin runtime identity before treating the services as a
-strict IAM boundary.
+The admin deployment script uses the dedicated `backend-admin-api-sa` runtime
+identity and fails its preflight if the public runtime identity can read
+`BACKEND_ADMIN_TOKEN`.
 
 Do not configure `GOOGLE_APPLICATION_CREDENTIALS` on Cloud Run. Cloud Run uses
 the attached service account.

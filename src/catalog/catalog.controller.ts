@@ -8,6 +8,7 @@ import {
   Req,
   Res,
   UseGuards,
+  UseInterceptors,
   UnauthorizedException,
 } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
@@ -23,6 +24,11 @@ import { DocumentAccessDto } from './dto/document-access.dto';
 import { CatalogRateLimiterService } from './catalog-rate-limiter.service';
 import { PublicSiteOriginGuard } from '../security/origin.guards';
 import { getPublicSiteOrigins } from '../config/origin.config';
+import {
+  catalogAccessCookieName,
+  CatalogAccessGuard,
+} from './catalog-access.guard';
+import { NoStoreInterceptor } from '../security/no-store.interceptor';
 
 @Controller('catalog')
 export class CatalogController {
@@ -62,6 +68,7 @@ export class CatalogController {
 
   @Post('access/google')
   @UseGuards(PublicSiteOriginGuard)
+  @UseInterceptors(NoStoreInterceptor)
   async createGoogleAccess(
     @Body() body: CatalogGoogleAccessDto,
     @Req() request: FastifyRequest,
@@ -98,6 +105,7 @@ export class CatalogController {
   }
 
   @Post('access/google/redirect')
+  @UseInterceptors(NoStoreInterceptor)
   async createGoogleRedirectAccess(
     @Body() body: CatalogGoogleRedirectDto,
     @Req() request: FastifyRequest,
@@ -131,8 +139,9 @@ export class CatalogController {
 
   @Get('access/me')
   @UseGuards(PublicSiteOriginGuard)
+  @UseInterceptors(NoStoreInterceptor)
   getAccessMe(@Req() request: FastifyRequest) {
-    const token = this.parseCookies(request.headers.cookie).catalog_access;
+    const token = request.cookies?.[catalogAccessCookieName];
 
     if (!token) {
       throw new UnauthorizedException('Catalog access is required');
@@ -156,11 +165,13 @@ export class CatalogController {
 
   @Post('access/request-otp')
   @UseGuards(PublicSiteOriginGuard)
+  @UseInterceptors(NoStoreInterceptor)
   async requestAccessOtp(
     @Body() body: CatalogOtpRequestDto,
     @Req() request: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
   ) {
+    void reply;
     const ip = this.getClientIp(request);
     const contactKey =
       body.channel === 'email'
@@ -183,27 +194,6 @@ export class CatalogController {
       );
     }
 
-    if (body.otp) {
-      const session = this.catalogAccessService.createMasterOtpAccess(body, {
-        ip,
-        userAgent: this.getUserAgent(request),
-      });
-
-      reply.header(
-        'Set-Cookie',
-        this.createAccessCookie(session.token, session.expiresAt),
-      );
-
-      return {
-        ok: true,
-        auth_provider: session.authProvider,
-        email: session.email,
-        mobile: session.mobile,
-        name: session.name,
-        expires_at: session.expiresAt.toISOString(),
-      };
-    }
-
     return this.catalogAccessService.requestOtp(body, {
       ip,
       userAgent: this.getUserAgent(request),
@@ -212,6 +202,7 @@ export class CatalogController {
 
   @Post('access/verify-otp')
   @UseGuards(PublicSiteOriginGuard)
+  @UseInterceptors(NoStoreInterceptor)
   verifyAccessOtp(
     @Body() body: CatalogVerifyOtpDto,
     @Req() request: FastifyRequest,
@@ -241,7 +232,8 @@ export class CatalogController {
   }
 
   @Post('documents/access')
-  @UseGuards(PublicSiteOriginGuard)
+  @UseGuards(PublicSiteOriginGuard, CatalogAccessGuard)
+  @UseInterceptors(NoStoreInterceptor)
   async createDocumentAccess(
     @Body() body: DocumentAccessDto,
     @Req() request: FastifyRequest,
@@ -277,6 +269,20 @@ export class CatalogController {
     }
 
     return this.catalogService.createSignedUrlForSelection(body, body.action);
+  }
+
+  @Post('access/logout')
+  @UseGuards(PublicSiteOriginGuard)
+  @UseInterceptors(NoStoreInterceptor)
+  logoutAccess(
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ) {
+    this.catalogAccessService.revokeAccessSession(
+      request.cookies?.[catalogAccessCookieName],
+    );
+    reply.header('Set-Cookie', this.createClearedAccessCookie());
+    return { ok: true };
   }
 
   private assertGoogleCsrfToken(
@@ -315,11 +321,28 @@ export class CatalogController {
 
   private createAccessCookie(token: string, expiresAt: Date): string {
     const cookieParts = [
-      `catalog_access=${encodeURIComponent(token)}`,
+      `${catalogAccessCookieName}=${encodeURIComponent(token)}`,
       'Path=/api/catalog',
       'HttpOnly',
       'SameSite=Lax',
       `Expires=${expiresAt.toUTCString()}`,
+    ];
+
+    if (process.env.NODE_ENV === 'production') {
+      cookieParts.push('Secure');
+    }
+
+    return cookieParts.join('; ');
+  }
+
+  private createClearedAccessCookie(): string {
+    const cookieParts = [
+      `${catalogAccessCookieName}=`,
+      'Path=/api/catalog',
+      'HttpOnly',
+      'SameSite=Lax',
+      'Max-Age=0',
+      'Expires=Thu, 01 Jan 1970 00:00:00 GMT',
     ];
 
     if (process.env.NODE_ENV === 'production') {

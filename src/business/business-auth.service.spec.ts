@@ -118,6 +118,20 @@ describe('BusinessAuthService', () => {
     expect(store.bindUser).not.toHaveBeenCalled();
   });
 
+  it('rejects an allowlisted Google account whose backend user is disabled', async () => {
+    store.bindUser.mockResolvedValue({
+      ...user,
+      status: 'disabled',
+    });
+
+    await expect(
+      service.authenticateWithGoogle('google-id-token', {
+        ip: '127.0.0.1',
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(store.createSession).not.toHaveBeenCalled();
+  });
+
   it('immediately revokes sessions when an email leaves the allowlist', async () => {
     const session = createStoredSession();
     store.getSession.mockResolvedValue(session);

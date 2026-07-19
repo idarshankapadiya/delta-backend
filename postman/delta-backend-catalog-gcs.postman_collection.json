@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Delta Backend Catalog GCS Flow",
-    "description": "Postman collection for the name-derived slug catalog API. Admin create/update requests send company_name, optional category_name, and document_name; writable slug fields and display_name are unsupported. PDFs stay private behind signed URLs, while thumbnails use public company/optional-category paths in darshanent-thumbnail-dir. document_id remains stable across document updates. POST /api/catalog/access is inquiry-only; Google access, OTP verification, and the temporary master OTP shortcut grant the catalog_access cookie. Do not put GOOGLE_APPLICATION_CREDENTIALS or service account JSON content in Postman.",
+    "description": "Postman collection for the name-derived slug catalog API. Admin create/update requests send company_name, optional category_name, and document_name; writable slug fields and display_name are unsupported. PDFs stay private behind signed URLs, while thumbnails use public company/optional-category paths in darshanent-thumbnail-dir. document_id remains stable across document updates. POST /api/catalog/access is inquiry-only; Google access and challenge-specific OTP verification grant the catalog_access cookie. Do not put GOOGLE_APPLICATION_CREDENTIALS or service account JSON content in Postman.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -23,7 +23,7 @@
     },
     {
       "key": "otp_code",
-      "value": "190399"
+      "value": "replace-with-delivered-otp"
     },
     {
       "key": "otp_challenge_id",
@@ -709,25 +709,18 @@
           }
         },
         {
-          "name": "Create Access Cookie - WhatsApp Master OTP Shortcut",
+          "name": "Direct OTP Submission To Request Endpoint Should Fail",
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('master OTP shortcut succeeds', function () {",
-                  "  pm.expect([200, 201]).to.include(pm.response.code);",
+                  "pm.test('request endpoint rejects direct OTP submission', function () {",
+                  "  pm.expect(pm.response.code).to.eql(400);",
                   "});",
-                  "",
-                  "const json = pm.response.json();",
-                  "pm.collectionVariables.set('access_expires_at', json.expires_at);",
-                  "",
-                  "pm.test('master OTP shortcut sets catalog_access cookie', function () {",
-                  "  pm.expect(json.ok).to.eql(true);",
-                  "  pm.expect(json.auth_provider).to.eql('whatsapp_otp');",
-                  "  pm.expect(json.expires_at).to.be.a('string');",
-                  "  pm.expect(pm.cookies.get('catalog_access')).to.be.ok;",
+                  "pm.test('request endpoint does not create a catalog session', function () {",
+                  "  pm.expect(pm.cookies.get('catalog_access')).to.not.be.ok;",
                   "});"
                 ]
               }
@@ -743,7 +736,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Shortcut Test User\",\n  \"mobile\": \"9999999999\",\n  \"email\": \"shortcut-test@example.com\",\n  \"message\": \"Testing master OTP shortcut from Postman\",\n  \"channel\": \"whatsapp\",\n  \"otp\": \"{{otp_code}}\"\n}"
+              "raw": "{\n  \"name\": \"Direct OTP Test User\",\n  \"mobile\": \"9999999999\",\n  \"email\": \"direct-otp-test@example.com\",\n  \"message\": \"Confirming request-otp rejects direct OTP submission\",\n  \"channel\": \"whatsapp\",\n  \"otp\": \"{{otp_code}}\"\n}"
             },
             "url": "{{base_url}}/api/catalog/access/request-otp"
           }

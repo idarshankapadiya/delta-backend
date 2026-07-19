@@ -118,7 +118,7 @@ export class AppService {
           method: 'POST',
           path: '/api/catalog/access/request-otp',
           description:
-            'Create an OTP challenge or grant temporary master OTP access.',
+            'Create an OTP challenge and deliver a one-time verification code.',
           auth: 'allowed browser origin for browser requests',
         },
         {
@@ -129,10 +129,16 @@ export class AppService {
         },
         {
           method: 'POST',
+          path: '/api/catalog/access/logout',
+          description: 'Revoke the current catalog access session.',
+          auth: 'catalog_access HttpOnly cookie',
+        },
+        {
+          method: 'POST',
           path: '/api/catalog/documents/access',
           description:
             'Create a short-lived signed PDF URL for preview or download.',
-          auth: 'allowed browser origin for browser requests',
+          auth: 'catalog_access HttpOnly cookie and allowed browser origin',
         },
       ],
     };

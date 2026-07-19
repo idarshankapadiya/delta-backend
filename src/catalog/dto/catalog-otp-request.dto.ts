@@ -11,7 +11,7 @@ export class CatalogOtpRequestDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(120)
-  name: string;
+  name!: string;
 
   @IsOptional()
   @IsString()
@@ -30,10 +30,5 @@ export class CatalogOtpRequestDto {
   message?: string;
 
   @IsIn(['whatsapp', 'email'])
-  channel: 'whatsapp' | 'email';
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(12)
-  otp?: string;
+  channel!: 'whatsapp' | 'email';
 }

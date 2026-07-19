@@ -1,14 +1,19 @@
+import { BadRequestException, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { CatalogAccessService } from './catalog-access.service';
+import { CatalogAccessGuard } from './catalog-access.guard';
 import { CatalogController } from './catalog.controller';
 import { CatalogOriginGuard } from './catalog-origin.guard';
 import { CatalogRateLimiterService } from './catalog-rate-limiter.service';
 import { CatalogService } from './catalog.service';
+import { CatalogOtpRequestDto } from './dto/catalog-otp-request.dto';
 
 describe('CatalogController', () => {
+  const originalOtpDeliveryEnabled = process.env.CATALOG_OTP_DELIVERY_ENABLED;
   let controller: CatalogController;
   let catalogAccessService: CatalogAccessService;
+  let catalogAccessGuard: CatalogAccessGuard;
   let catalogService: {
     createCatalogDocument: jest.Mock;
     createSignedUrlForSelection: jest.Mock;
@@ -34,6 +39,7 @@ describe('CatalogController', () => {
       controllers: [CatalogController],
       providers: [
         CatalogAccessService,
+        CatalogAccessGuard,
         CatalogRateLimiterService,
         CatalogOriginGuard,
         {
@@ -46,6 +52,22 @@ describe('CatalogController', () => {
     controller = module.get<CatalogController>(CatalogController);
     catalogAccessService =
       module.get<CatalogAccessService>(CatalogAccessService);
+    catalogAccessGuard = module.get<CatalogAccessGuard>(CatalogAccessGuard);
+    process.env.CATALOG_OTP_DELIVERY_ENABLED = 'true';
+    jest
+      .spyOn(
+        catalogAccessService as unknown as { createOtp(): string },
+        'createOtp',
+      )
+      .mockReturnValue('654321');
+  });
+
+  afterAll(() => {
+    if (originalOtpDeliveryEnabled === undefined) {
+      delete process.env.CATALOG_OTP_DELIVERY_ENABLED;
+    } else {
+      process.env.CATALOG_OTP_DELIVERY_ENABLED = originalOtpDeliveryEnabled;
+    }
   });
 
   it('records access inquiries without setting the access cookie', () => {
@@ -171,7 +193,7 @@ describe('CatalogController', () => {
       {
         challenge_id: challengeId,
         email: 'customer@example.com',
-        otp: '190399',
+        otp: '654321',
       },
       createRequest(),
       reply as unknown as FastifyReply,
@@ -182,38 +204,176 @@ describe('CatalogController', () => {
     expect(reply.header.mock.calls[0]?.[1]).toContain('catalog_access=');
   });
 
-  it('sets the access cookie when request-otp includes the master OTP', async () => {
-    const reply = createReply();
-
-    await expect(
-      controller.requestAccessOtp(
-        {
-          name: 'Customer',
-          mobile: '9999999999',
-          channel: 'whatsapp',
-          otp: '190399',
+  it('invokes OTP delivery for each new challenge', async () => {
+    const sendOtp = jest
+      .spyOn(
+        catalogAccessService as unknown as {
+          sendOtp(challenge: unknown, otp: string): Promise<void>;
         },
-        createRequest(),
-        reply as unknown as FastifyReply,
-      ),
-    ).resolves.toMatchObject({
-      ok: true,
-      auth_provider: 'whatsapp_otp',
-      mobile: '9999999999',
-      name: 'Customer',
-    });
-    expect(reply.header.mock.calls[0]?.[1]).toContain('catalog_access=');
-  });
-
-  it('returns the current access session for a valid access cookie', async () => {
-    const reply = createReply();
+        'sendOtp',
+      )
+      .mockResolvedValue(undefined);
 
     await controller.requestAccessOtp(
       {
         name: 'Customer',
+        email: 'customer@example.com',
+        channel: 'email',
+      },
+      createRequest(),
+      createReply() as unknown as FastifyReply,
+    );
+
+    expect(sendOtp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel: 'email',
+        email: 'customer@example.com',
+      }),
+      '654321',
+    );
+  });
+
+  it('rejects contact-mismatched OTP challenges', async () => {
+    const otpRequest = await controller.requestAccessOtp(
+      {
+        name: 'Customer',
+        email: 'customer@example.com',
+        channel: 'email',
+      },
+      createRequest(),
+      createReply() as unknown as FastifyReply,
+    );
+
+    expect(() =>
+      controller.verifyAccessOtp(
+        {
+          challenge_id: getChallengeId(otpRequest),
+          email: 'other@example.com',
+          otp: '654321',
+        },
+        createRequest(),
+        createReply() as unknown as FastifyReply,
+      ),
+    ).toThrow('Invalid OTP challenge');
+  });
+
+  it('rejects expired OTP challenges', async () => {
+    const otpRequest = await controller.requestAccessOtp(
+      { name: 'Customer', mobile: '9999999999', channel: 'whatsapp' },
+      createRequest(),
+      createReply() as unknown as FastifyReply,
+    );
+    const challengeId = getChallengeId(otpRequest);
+    const challenges = (
+      catalogAccessService as unknown as {
+        otpChallenges: Map<string, { expiresAt: Date }>;
+      }
+    ).otpChallenges;
+    const challenge = challenges.get(challengeId);
+
+    expect(challenge).toBeDefined();
+    challenge!.expiresAt = new Date(0);
+
+    expect(() =>
+      controller.verifyAccessOtp(
+        {
+          challenge_id: challengeId,
+          mobile: '9999999999',
+          otp: '654321',
+        },
+        createRequest(),
+        createReply() as unknown as FastifyReply,
+      ),
+    ).toThrow('OTP challenge has expired');
+  });
+
+  it('locks OTP challenges after the configured maximum attempts', async () => {
+    const previousMaxAttempts = process.env.CATALOG_OTP_MAX_ATTEMPTS;
+    process.env.CATALOG_OTP_MAX_ATTEMPTS = '2';
+
+    try {
+      const otpRequest = await controller.requestAccessOtp(
+        { name: 'Customer', mobile: '9999999999', channel: 'whatsapp' },
+        createRequest(),
+        createReply() as unknown as FastifyReply,
+      );
+      const challengeId = getChallengeId(otpRequest);
+      const verifyWrongOtp = () =>
+        controller.verifyAccessOtp(
+          {
+            challenge_id: challengeId,
+            mobile: '9999999999',
+            otp: '000000',
+          },
+          createRequest(),
+          createReply() as unknown as FastifyReply,
+        );
+
+      expect(verifyWrongOtp).toThrow('Invalid OTP');
+      expect(verifyWrongOtp).toThrow('OTP challenge is locked');
+      expect(() =>
+        controller.verifyAccessOtp(
+          {
+            challenge_id: challengeId,
+            mobile: '9999999999',
+            otp: '654321',
+          },
+          createRequest(),
+          createReply() as unknown as FastifyReply,
+        ),
+      ).toThrow('OTP challenge is locked');
+    } finally {
+      if (previousMaxAttempts === undefined) {
+        delete process.env.CATALOG_OTP_MAX_ATTEMPTS;
+      } else {
+        process.env.CATALOG_OTP_MAX_ATTEMPTS = previousMaxAttempts;
+      }
+    }
+  });
+
+  it('rejects replay of a verified OTP challenge', async () => {
+    const otpRequest = await controller.requestAccessOtp(
+      { name: 'Customer', mobile: '9999999999', channel: 'whatsapp' },
+      createRequest(),
+      createReply() as unknown as FastifyReply,
+    );
+    const challengeId = getChallengeId(otpRequest);
+    const verification = {
+      challenge_id: challengeId,
+      mobile: '9999999999',
+      otp: '654321',
+    };
+
+    expect(
+      controller.verifyAccessOtp(
+        verification,
+        createRequest(),
+        createReply() as unknown as FastifyReply,
+      ).ok,
+    ).toBe(true);
+    expect(() =>
+      controller.verifyAccessOtp(
+        verification,
+        createRequest(),
+        createReply() as unknown as FastifyReply,
+      ),
+    ).toThrow('Invalid OTP challenge');
+  });
+
+  it('returns the current access session for a valid access cookie', async () => {
+    const otpRequest = await controller.requestAccessOtp(
+      { name: 'Customer', mobile: '9999999999', channel: 'whatsapp' },
+      createRequest(),
+      createReply() as unknown as FastifyReply,
+    );
+    const reply = createReply();
+    const challengeId = getChallengeId(otpRequest);
+
+    controller.verifyAccessOtp(
+      {
+        challenge_id: challengeId,
         mobile: '9999999999',
-        channel: 'whatsapp',
-        otp: '190399',
+        otp: '654321',
       },
       createRequest(),
       reply as unknown as FastifyReply,
@@ -238,29 +398,10 @@ describe('CatalogController', () => {
     );
   });
 
-  it('returns signed URL details without the access cookie', async () => {
-    catalogService.documentSelectionExists.mockResolvedValue(true);
-    catalogService.createSignedUrlForSelection.mockResolvedValue({
-      document_id: '01JABCDEF00000000000000000',
-      url: 'https://storage.googleapis.com/signed',
-      expires_at: '2026-06-16T18:30:00.000Z',
-      ttl_seconds: 900,
-      file_name: 'PMS_Metering.pdf',
-    });
-
-    await expect(
-      controller.createDocumentAccess(
-        {
-          company_slug: 'schneider',
-          document_slug: 'plc-catalog',
-          action: 'preview',
-        },
-        createRequest(),
-      ),
-    ).resolves.toMatchObject({
-      document_id: '01JABCDEF00000000000000000',
-      url: 'https://storage.googleapis.com/signed',
-    });
+  it('rejects signed URL access without the catalog access cookie', () => {
+    expect(() =>
+      catalogAccessGuard.canActivate(createContext(createRequest())),
+    ).toThrow('Catalog access is required');
   });
 
   it('returns signed URL details for slug-based access', async () => {
@@ -276,13 +417,16 @@ describe('CatalogController', () => {
       {
         challenge_id: challengeId,
         mobile: '9999999999',
-        otp: '190399',
+        otp: '654321',
       },
       createRequest(),
       reply as unknown as FastifyReply,
     );
 
     const cookie = reply.header.mock.calls[0]?.[1] ?? '';
+    expect(
+      catalogAccessGuard.canActivate(createContext(createRequest(cookie))),
+    ).toBe(true);
     catalogService.documentSelectionExists.mockResolvedValue(true);
     catalogService.createSignedUrlForSelection.mockResolvedValue({
       document_id: '01JABCDEF00000000000000000',
@@ -308,14 +452,102 @@ describe('CatalogController', () => {
     });
   });
 
+  it('does not treat the former master OTP as a valid challenge code', async () => {
+    const otpRequest = await controller.requestAccessOtp(
+      { name: 'Customer', mobile: '9999999999', channel: 'whatsapp' },
+      createRequest(),
+      createReply() as unknown as FastifyReply,
+    );
+
+    expect(() =>
+      controller.verifyAccessOtp(
+        {
+          challenge_id: getChallengeId(otpRequest),
+          mobile: '9999999999',
+          otp: '190399',
+        },
+        createRequest(),
+        createReply() as unknown as FastifyReply,
+      ),
+    ).toThrow('Invalid OTP');
+  });
+
+  it('rejects an OTP supplied to the request-otp payload', async () => {
+    const pipe = new ValidationPipe({
+      forbidNonWhitelisted: true,
+      transform: true,
+      whitelist: true,
+    });
+
+    await expect(
+      pipe.transform(
+        {
+          name: 'Customer',
+          mobile: '9999999999',
+          channel: 'whatsapp',
+          otp: '190399',
+        },
+        { type: 'body', metatype: CatalogOtpRequestDto },
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('revokes and clears the current catalog access session', async () => {
+    const otpRequest = await controller.requestAccessOtp(
+      { name: 'Customer', mobile: '9999999999', channel: 'whatsapp' },
+      createRequest(),
+      createReply() as unknown as FastifyReply,
+    );
+    const sessionReply = createReply();
+    controller.verifyAccessOtp(
+      {
+        challenge_id: getChallengeId(otpRequest),
+        mobile: '9999999999',
+        otp: '654321',
+      },
+      createRequest(),
+      sessionReply as unknown as FastifyReply,
+    );
+    const cookie = sessionReply.header.mock.calls[0]?.[1] ?? '';
+    const logoutReply = createReply();
+
+    expect(
+      controller.logoutAccess(
+        createRequest(cookie),
+        logoutReply as unknown as FastifyReply,
+      ),
+    ).toEqual({ ok: true });
+    expect(logoutReply.header.mock.calls[0]?.[1]).toContain('Max-Age=0');
+    expect(() =>
+      catalogAccessGuard.canActivate(createContext(createRequest(cookie))),
+    ).toThrow('Catalog access is required');
+  });
+
   function createRequest(cookie?: string, origin?: string): FastifyRequest {
+    const cookies = Object.fromEntries(
+      (cookie ?? '')
+        .split(';')
+        .map((part) => part.trim().split('='))
+        .filter(([name, value]) => Boolean(name && value))
+        .map(([name, ...value]) => [name, decodeURIComponent(value.join('='))]),
+    );
+
     return {
       ip: '127.0.0.1',
+      cookies,
       headers: {
         cookie,
         origin,
       },
     } as FastifyRequest;
+  }
+
+  function createContext(request: FastifyRequest) {
+    return {
+      switchToHttp: () => ({
+        getRequest: () => request,
+      }),
+    } as never;
   }
 
   function createReply(): {
