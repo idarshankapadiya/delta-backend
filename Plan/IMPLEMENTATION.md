@@ -65,6 +65,19 @@ email and WhatsApp OTP implementation. It made these changes:
   logout, business allowlisting/disabled users, CSRF, and registration of all
   existing routes.
 
+Google Cloud and Firebase identify the production project as follows:
+
+```text
+Display name: deweb1
+Project ID: deweb-preview1
+Project number: 157686675107
+```
+
+`deweb1` and `deweb-preview1` are the same project. The business UI OAuth Web
+client ID begins with project number `157686675107`, and its Authorized
+JavaScript Origins must include exactly
+`https://business.darshanent.co.in`.
+
 ## Implemented Files
 
 - `src/catalog/catalog.controller.ts`
@@ -608,6 +621,9 @@ Thumbnail generation:
 - No immediate code change is required for the current `delta-ui` repository:
   it does not yet call `/api/message`, catalog access, OTP, session lookup,
   logout, or signed-document endpoints.
+- A source compatibility review found only placeholder `dummyjson.com` fetches
+  in the current `delta-ui`; none of the backend contracts changed by this
+  security pass are consumed there.
 - When catalog OTP is integrated, first call
   `POST /api/catalog/access/request-otp` without an `otp` field, then submit the
   returned `challenge_id`, matching contact, and user-entered `otp` to
@@ -627,7 +643,12 @@ Thumbnail generation:
 ### `business-delta-ui`
 
 - Configure the business frontend build with `VITE_API_BASE_URL=https://darshanent.co.in/api`.
-- Confirm `https://business.darshanent.co.in` is present in the OAuth web client's Authorized JavaScript Origins before business UI production use.
+- In Google Cloud project ID `deweb-preview1` (display name `deweb1`), confirm
+  `https://business.darshanent.co.in` is present in the existing OAuth Web
+  client's Authorized JavaScript Origins before production use.
+- The `business-delta-ui` Firebase Hosting site and custom domain are attached;
+  wait for the custom domain to finish TLS certificate minting and report
+  `Connected` before running the verified UI deployment.
 - Delete any old frontend admin-token environment variables and redeploy the business UI so stale bundles do not retain token-based admin behavior.
 - Require two-step verification for dashboard administrators.
 - Use backend business session auth only; do not store or send `BACKEND_ADMIN_TOKEN` from the browser.

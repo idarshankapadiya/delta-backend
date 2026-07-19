@@ -7,6 +7,7 @@ readonly REGION="asia-south1"
 readonly SERVICE_NAME="delta-backend"
 readonly RUN_SERVICE_ACCOUNT="backend-api-sa@deweb-preview1.iam.gserviceaccount.com"
 readonly BUSINESS_CSRF_SECRET="BUSINESS_UI_CSRF_SECRET"
+readonly LOAD_BALANCER_IP="34.117.140.122"
 
 readonly FRONTEND_URL="https://darshanent.co.in"
 readonly PUBLIC_FRONTEND_ORIGINS="${FRONTEND_URL},https://www.darshanent.co.in"
@@ -47,6 +48,20 @@ if ! command -v gcloud >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! command -v dig >/dev/null 2>&1; then
+  echo "Error: dig is required to verify the production DNS cutover." >&2
+  exit 1
+fi
+
+for frontend_host in "darshanent.co.in" "www.darshanent.co.in"; do
+  resolved_ips="$(dig +short A "$frontend_host" | sort -u)"
+
+  if ! grep -Fqx "$LOAD_BALANCER_IP" <<<"$resolved_ips"; then
+    echo "Error: $frontend_host must resolve to load balancer IP $LOAD_BALANCER_IP before deployment." >&2
+    exit 1
+  fi
+done
+
 ACTIVE_ACCOUNT="$(gcloud auth list --filter="status:ACTIVE" --format="value(account)" | head -n 1)"
 if [[ -z "$ACTIVE_ACCOUNT" ]]; then
   echo "Error: no active gcloud account. Run 'gcloud auth login' first." >&2
@@ -74,22 +89,22 @@ gcloud run deploy "$SERVICE_NAME" \
   --region "$REGION" \
   --service-account "$RUN_SERVICE_ACCOUNT" \
   --allow-unauthenticated \
-  --ingress all \
-  --default-url \
+  --ingress internal-and-cloud-load-balancing \
+  --no-default-url \
   --max-instances=1 \
   --memory=2Gi \
   --cpu=1 \
   --timeout=300 \
   --update-env-vars "^~^NODE_ENV=production~HOST=0.0.0.0~PUBLIC_FRONTEND_ORIGIN=$PUBLIC_FRONTEND_ORIGINS~BUSINESS_FRONTEND_ORIGIN=$BUSINESS_FRONTEND_URL~FRONTEND_BASE_URL=$FRONTEND_URL~CATALOG_GOOGLE_REDIRECT_URL=$FRONTEND_URL~GCS_CATALOG_BUCKET=$PRIVATE_BUCKET~GCS_CATALOG_PREFIX=~GCS_CATALOG_PUBLIC_ASSET_BUCKET=$PUBLIC_BUCKET~CATALOG_PUBLIC_ASSET_BASE_URL=https://storage.googleapis.com/$PUBLIC_BUCKET~CATALOG_SIGNED_URL_TTL_SECONDS=900~GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID~BUSINESS_UI_GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID~FIRESTORE_DATABASE_ID=$FIRESTORE_DATABASE_ID~BUSINESS_UI_ALLOWED_GOOGLE_EMAILS=$BUSINESS_ALLOWED_EMAILS~RECAPTCHA_ENTERPRISE_PROJECT_ID=$RECAPTCHA_PROJECT_ID~RECAPTCHA_ENTERPRISE_SITE_KEY=$RECAPTCHA_SITE_KEY~INTERNAL_ADMIN_API_ENABLED=false~INTERNAL_ADMIN_SERVICE_ONLY=false" \
-  --remove-env-vars "BACKEND_ADMIN_TOKEN" \
+  --remove-env-vars "BACKEND_ADMIN_TOKEN,FRONTEND_ORIGIN" \
   --update-secrets "BUSINESS_UI_CSRF_SECRET=$BUSINESS_CSRF_SECRET:latest" \
   --remove-secrets "BACKEND_ADMIN_TOKEN" \
   --quiet
 
-SERVICE_URL="$(gcloud run services describe "$SERVICE_NAME" \
+LATEST_REVISION="$(gcloud run services describe "$SERVICE_NAME" \
   --project "$PROJECT_ID" \
   --region "$REGION" \
-  --format="value(status.url)")"
+  --format="value(status.latestReadyRevisionName)")"
 
-echo "Deployment complete: $SERVICE_URL"
-echo "Verify through https://darshanent.co.in/api/health, https://www.darshanent.co.in/api/health, and ${SERVICE_URL}/api/health."
+echo "Deployment complete: $LATEST_REVISION"
+echo "Verify through https://darshanent.co.in/api/health and https://www.darshanent.co.in/api/health."

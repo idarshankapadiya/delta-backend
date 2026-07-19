@@ -20,16 +20,20 @@ The external Application Load Balancer must route:
 ```text
 darshanent.co.in/api
 darshanent.co.in/api/*
-  → asia-south1 serverless NEG
+  → delta-backend-lb-service
+  → asia-south1 delta-backend-neg
   → delta-backend
 
 darshanent.co.in/*
-  → public UI backend
+  → delta-ui-firebase-lb-service
+  → global delta-ui-firebase-neg
+  → deweb-preview1.web.app
 ```
 
-Do not use Firebase Hosting rewrites for the API. Firebase Hosting strips
-incoming cookies other than `__session`, while this application intentionally
-uses separate HttpOnly business and public catalog cookies.
+Firebase Hosting remains the public UI origin behind the load balancer. Do not
+send `/api` through Firebase Hosting rewrites. The load-balancer path rule sends
+API traffic directly to Cloud Run so application cookies are not processed by
+the Firebase Hosting proxy.
 
 ## Current state: 19 July 2026
 
@@ -38,22 +42,34 @@ Read-only production checks showed:
 | Check                                          | Current result                                          |
 | ---------------------------------------------- | ------------------------------------------------------- |
 | `delta-backend`                                | Exists                                                  |
-| Latest ready revision                          | `delta-backend-00010-mhj`                               |
+| Latest ready revision                          | `delta-backend-00011-2gx`                               |
 | Runtime service account                        | `backend-api-sa@deweb-preview1.iam.gserviceaccount.com` |
 | Ingress                                        | `all`                                                   |
 | Default `run.app` URL                          | Enabled                                                 |
+| Load-balancer IP                               | `34.117.140.122`                                        |
+| Serverless API NEG                             | `delta-backend-neg`                                     |
+| Firebase UI internet NEG                       | `delta-ui-firebase-neg`                                 |
+| URL map                                        | `delta-ui-url-map`                                      |
+| HTTP pinned-IP API/UI checks                   | Pass                                                    |
+| HTTPS certificate                              | Provisioning; DNS is not cut over                       |
+| Apex DNS                                       | Still points to Firebase Hosting                        |
+| `www` DNS                                      | Still aliases Firebase Hosting                          |
 | `delta-backend-admin`                          | Does not exist                                          |
 | Dedicated admin runtime account                | Exists                                                  |
 | `BUSINESS_UI_CSRF_SECRET`                      | Exists                                                  |
 | `BACKEND_ADMIN_TOKEN`                          | Exists                                                  |
 | Public runtime access to `BACKEND_ADMIN_TOKEN` | Removed                                                 |
 | Admin runtime access to `BACKEND_ADMIN_TOKEN`  | Granted                                                 |
-| `https://darshanent.co.in/api/health`          | Returns backend health JSON                             |
-| Current Cloud Run `/api/health`                | Returns backend JSON                                    |
+| Current Firebase `/api/health`                 | Returns backend health JSON                             |
+| Pinned load-balancer `/api/health`             | Returns backend health JSON                             |
+| Pinned load-balancer public UI                 | Returns the Firebase-hosted UI                          |
 
-The public load-balancer API route and least-privilege runtime identities are
-ready. The separate `delta-backend-admin` service still needs its first
-deployment.
+Revision `delta-backend-00011-2gx` contains both public and authenticated
+business APIs and serves 100% of Cloud Run traffic. The load balancer is
+provisioned and validated without changing production DNS. DNS cutover and
+certificate activation remain before Cloud Run ingress can be restricted and
+its default URL disabled. The separate `delta-backend-admin` service still
+needs its first deployment only if internal operator routes are required.
 
 The admin deployment script now requires
 `backend-admin-api-sa@deweb-preview1.iam.gserviceaccount.com` and refuses to
@@ -78,6 +94,8 @@ Behavior:
 - uses Node 24 from `package.json`;
 - attaches
   `backend-api-sa@deweb-preview1.iam.gserviceaccount.com`;
+- refuses deployment unless both production frontend hosts resolve to
+  `34.117.140.122`;
 - allows unauthenticated network invocation because public routes exist;
 - relies on application guards for business authorization;
 - restricts ingress to internal/load-balancer traffic;
@@ -93,14 +111,17 @@ Required deployment inputs:
 
 ```bash
 export BUSINESS_UI_ALLOWED_GOOGLE_EMAILS="admin1@gmail.com,admin2@gmail.com"
-export RECAPTCHA_ENTERPRISE_SITE_KEY="<production-site-key>"
 ```
 
 Optional:
 
 ```bash
 export RECAPTCHA_ENTERPRISE_PROJECT_ID="deweb-preview1"
+export RECAPTCHA_ENTERPRISE_SITE_KEY="<production-site-key>"
 ```
+
+When the reCAPTCHA site key is omitted, the deployment continues with a warning
+and contact-form CAPTCHA verification remains disabled.
 
 ### Internal admin deployment
 
@@ -281,17 +302,38 @@ message_rate_limits.expires_at
 
 ### 7. Load balancer and DNS
 
-Before deploying the hardened public service:
+Implemented load-balancer resources:
 
-1. Reserve a global IP.
-2. Create the Google-managed certificate for `darshanent.co.in`.
-3. Create an `asia-south1` serverless NEG for `delta-backend`.
-4. Route `/api` and `/api/*` to the backend service containing that NEG.
-5. Route other paths to the public UI backend.
-6. Point `darshanent.co.in` DNS to the load-balancer IP.
-7. Attach Cloud Armor policies.
-8. Verify that `/api/health` reaches Cloud Run before disabling the default
-   Cloud Run URL.
+| Resource              | Name                             |
+| --------------------- | -------------------------------- |
+| Global IPv4 address   | `delta-ui-public-ip`             |
+| Managed certificate   | `delta-ui-cert`                  |
+| Cloud Run NEG         | `delta-backend-neg`              |
+| Firebase internet NEG | `delta-ui-firebase-neg`          |
+| API backend service   | `delta-backend-lb-service`       |
+| UI backend service    | `delta-ui-firebase-lb-service`   |
+| URL map               | `delta-ui-url-map`               |
+| HTTP proxy            | `delta-ui-http-proxy`            |
+| HTTPS proxy           | `delta-ui-https-proxy`           |
+| HTTP forwarding rule  | `delta-ui-http-forwarding-rule`  |
+| HTTPS forwarding rule | `delta-ui-https-forwarding-rule` |
+
+The URL map sends `/api` and `/api/*` directly to the Cloud Run NEG and
+everything else to `deweb-preview1.web.app` through the Firebase internet NEG.
+Pinned-IP HTTP checks against `34.117.140.122` pass for the UI, public APIs,
+business CORS/auth boundaries, and cookie forwarding.
+
+Remaining cutover:
+
+1. Replace the apex `A` record `199.36.158.100` with `34.117.140.122`.
+2. Replace the `www` CNAME to `deweb-preview1.web.app` with an `A` record to
+   `34.117.140.122`.
+3. Wait until `delta-ui-cert` reports `ACTIVE` for both names.
+4. Verify HTTPS UI and API routing.
+5. Change the HTTP frontend to redirect to HTTPS.
+6. Set Cloud Run ingress to `internal-and-cloud-load-balancing` and disable its
+   default URL.
+7. Attach a reviewed Cloud Armor policy if edge WAF rules are required.
 
 Verification must inspect JSON, not only HTTP status. Firebase currently returns
 the SPA HTML with status `200` for unknown `/api` paths.
@@ -366,15 +408,25 @@ runtime service account.
 
 ```bash
 export BUSINESS_UI_ALLOWED_GOOGLE_EMAILS="admin1@gmail.com,admin2@gmail.com"
-export RECAPTCHA_ENTERPRISE_SITE_KEY="<production-site-key>"
 export RECAPTCHA_ENTERPRISE_PROJECT_ID="deweb-preview1"
+# Optional until contact-form CAPTCHA enforcement is enabled:
+export RECAPTCHA_ENTERPRISE_SITE_KEY="<production-site-key>"
 ```
 
 ### 5. Deploy the public/business service
 
-Only after the load-balancer `/api` route returns backend JSON:
+The deployment script requires both production hosts to resolve to the
+load-balancer IP. Confirm DNS and certificate state first:
 
 ```bash
+dig +short A darshanent.co.in
+dig +short A www.darshanent.co.in
+
+gcloud compute ssl-certificates describe delta-ui-cert \
+  --project deweb-preview1 \
+  --global \
+  --format="yaml(managed.status,managed.domainStatus)"
+
 curl --fail --silent https://darshanent.co.in/api/health |
   jq -e '.status == "ok"'
 
