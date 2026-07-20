@@ -404,29 +404,7 @@ describe('CatalogController', () => {
     ).toThrow('Catalog access is required');
   });
 
-  it('returns signed URL details for slug-based access', async () => {
-    const otpRequest = await controller.requestAccessOtp(
-      { name: 'Customer', mobile: '9999999999', channel: 'whatsapp' },
-      createRequest(),
-      createReply() as unknown as FastifyReply,
-    );
-    const reply = createReply();
-    const challengeId = getChallengeId(otpRequest);
-
-    controller.verifyAccessOtp(
-      {
-        challenge_id: challengeId,
-        mobile: '9999999999',
-        otp: '654321',
-      },
-      createRequest(),
-      reply as unknown as FastifyReply,
-    );
-
-    const cookie = reply.header.mock.calls[0]?.[1] ?? '';
-    expect(
-      catalogAccessGuard.canActivate(createContext(createRequest(cookie))),
-    ).toBe(true);
+  it('returns signed URL details for public slug-based access', async () => {
     catalogService.documentSelectionExists.mockResolvedValue(true);
     catalogService.createSignedUrlForSelection.mockResolvedValue({
       document_id: '01JABCDEF00000000000000000',
@@ -444,7 +422,7 @@ describe('CatalogController', () => {
           document_slug: 'plc-catalog',
           action: 'preview',
         },
-        createRequest(cookie),
+        createRequest(),
       ),
     ).resolves.toMatchObject({
       document_id: '01JABCDEF00000000000000000',

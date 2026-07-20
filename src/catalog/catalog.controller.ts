@@ -24,10 +24,7 @@ import { DocumentAccessDto } from './dto/document-access.dto';
 import { CatalogRateLimiterService } from './catalog-rate-limiter.service';
 import { PublicSiteOriginGuard } from '../security/origin.guards';
 import { getPublicSiteOrigins } from '../config/origin.config';
-import {
-  catalogAccessCookieName,
-  CatalogAccessGuard,
-} from './catalog-access.guard';
+import { catalogAccessCookieName } from './catalog-access.guard';
 import { NoStoreInterceptor } from '../security/no-store.interceptor';
 
 @Controller('catalog')
@@ -232,7 +229,7 @@ export class CatalogController {
   }
 
   @Post('documents/access')
-  @UseGuards(PublicSiteOriginGuard, CatalogAccessGuard)
+  @UseGuards(PublicSiteOriginGuard)
   @UseInterceptors(NoStoreInterceptor)
   async createDocumentAccess(
     @Body() body: DocumentAccessDto,

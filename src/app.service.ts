@@ -138,7 +138,7 @@ export class AppService {
           path: '/api/catalog/documents/access',
           description:
             'Create a short-lived signed PDF URL for preview or download.',
-          auth: 'catalog_access HttpOnly cookie and allowed browser origin',
+          auth: 'allowed browser origin for browser requests',
         },
       ],
     };
