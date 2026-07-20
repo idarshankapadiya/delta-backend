@@ -10,7 +10,7 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { getHttpHost, getHttpPort } from './config/http.config';
 import { getCatalogUploadMaxBytes } from './config/catalog.config';
-import { handleCorsOrigin } from './config/cors.config';
+import { corsAllowedMethods, handleCorsOrigin } from './config/cors.config';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -33,6 +33,7 @@ async function bootstrap() {
   app.enableCors({
     origin: handleCorsOrigin,
     credentials: true,
+    methods: corsAllowedMethods,
   });
 
   app.useGlobalPipes(

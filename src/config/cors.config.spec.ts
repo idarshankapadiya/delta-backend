@@ -1,4 +1,4 @@
-import { handleCorsOrigin } from './cors.config';
+import { corsAllowedMethods, handleCorsOrigin } from './cors.config';
 
 describe('handleCorsOrigin', () => {
   const originalNodeEnv = process.env.NODE_ENV;
@@ -39,6 +39,14 @@ describe('handleCorsOrigin', () => {
     handleCorsOrigin(undefined, callback);
 
     expect(callback).toHaveBeenCalledWith(null, true);
+  });
+});
+
+describe('corsAllowedMethods', () => {
+  it('allows business catalog mutation preflights', () => {
+    expect(corsAllowedMethods).toEqual(
+      expect.arrayContaining(['POST', 'PUT', 'DELETE', 'OPTIONS']),
+    );
   });
 });
 

@@ -122,5 +122,26 @@ LATEST_REVISION="$(gcloud run services describe "$SERVICE_NAME" \
   --region "$REGION" \
   --format="value(status.latestReadyRevisionName)")"
 
+delete_preflight_headers="$(
+  curl --fail --silent --show-error \
+    -D - \
+    -o /dev/null \
+    -X OPTIONS \
+    -H "Origin: ${BUSINESS_FRONTEND_URL}" \
+    -H "Access-Control-Request-Method: DELETE" \
+    -H "Access-Control-Request-Headers: x-csrf-token" \
+    "${FRONTEND_URL}/api/business/catalog/documents/preflight-check"
+)"
+
+if ! grep -Fqi "access-control-allow-origin: ${BUSINESS_FRONTEND_URL}" <<<"$delete_preflight_headers"; then
+  echo "Error: deployed backend CORS does not allow ${BUSINESS_FRONTEND_URL}." >&2
+  exit 1
+fi
+
+if ! grep -Eiq 'access-control-allow-methods:.*\bDELETE\b' <<<"$delete_preflight_headers"; then
+  echo "Error: deployed backend CORS does not allow DELETE preflight requests." >&2
+  exit 1
+fi
+
 echo "Deployment complete: $LATEST_REVISION"
 echo "Verify through https://darshanent.co.in/api/health and https://www.darshanent.co.in/api/health."
