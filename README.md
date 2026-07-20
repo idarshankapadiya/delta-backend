@@ -51,13 +51,18 @@ npm run test:e2e -- --runInBand
 npm run build
 ```
 
+Use `npm run lint:fix` to apply ESLint fixes. The regular `lint` command is
+read-only and is safe to use as a validation check.
+
 ## Deployment commands
 
 The package provides:
 
 ```json
-"deploy:gcp": "bash scripts/deploy-gcp.sh",
-"deploy:gcp:admin": "bash scripts/deploy-gcp-admin.sh"
+"deploy:gcp:prepare": "npm run lint && npm test -- --runInBand && npm run test:e2e -- --runInBand && npm run build",
+"deploy:gcp": "npm run deploy:gcp:prepare && bash scripts/deploy-gcp.sh && bash scripts/deploy-gcp-admin.sh",
+"deploy:gcp:user": "npm run deploy:gcp:prepare && bash scripts/deploy-gcp.sh",
+"deploy:gcp:admin": "npm run deploy:gcp:prepare && bash scripts/deploy-gcp-admin.sh"
 ```
 
 Run them through npm from the backend repository root:
@@ -65,11 +70,29 @@ Run them through npm from the backend repository root:
 ```bash
 cd /Users/darshankapadiya/Developer/delta/delta-backend
 
+npm run deploy:gcp:prepare
 npm run deploy:gcp
+npm run deploy:gcp:user
 npm run deploy:gcp:admin
 ```
 
+`deploy:gcp:prepare` performs only local validation: read-only linting, unit
+tests, e2e tests, and the production build. Every deployment command runs it
+automatically and stops before invoking `gcloud` if any check fails. The
+combined `deploy:gcp` command prepares once, then deploys the user/public
+service followed by the admin service.
+
+This repository uses npm and commits `package-lock.json`. If Yarn is installed,
+the same scripts can be invoked through Yarn, including `yarn deploy:gcp`,
+`yarn deploy:gcp:user`, `yarn deploy:gcp:admin`, and `yarn lint:fix`.
+
 ### `npm run deploy:gcp`
+
+Runs the complete backend release: local preparation, the user/public
+deployment, and then the internal admin deployment. The commands run
+sequentially and stop at the first failure.
+
+### `npm run deploy:gcp:user`
 
 Updates the existing `delta-backend` Cloud Run service from the current local
 working tree.
@@ -164,23 +187,24 @@ As verified on 19 July 2026:
 
 | Change                                                            | Command                                                  |
 | ----------------------------------------------------------------- | -------------------------------------------------------- |
-| Public routes, business authentication, business catalog/messages | `npm run deploy:gcp`                                     |
+| Public routes, business authentication, business catalog/messages | `npm run deploy:gcp:user`                                |
 | Internal Postman/operator routes only                             | `npm run deploy:gcp:admin`                               |
-| Shared services, dependencies, DTOs, catalog or message logic     | Run both commands                                        |
+| Shared services, dependencies, DTOs, catalog or message logic     | `npm run deploy:gcp`                                     |
 | Documentation/frontend-only change                                | Neither backend command                                  |
-| First production setup                                            | Complete the infrastructure runbook first, then run both |
+| First production setup                                            | Complete the infrastructure runbook, then `deploy:gcp`   |
 
 Deployments are independent. Updating `delta-backend` does not update
-`delta-backend-admin`, even though both use the same repository.
+`delta-backend-admin`, even though both use the same repository. The combined
+command updates both services in public-then-admin order.
 
 ## Recommended routine deployment
 
 ```bash
 git status --short
 npm install
-npm run lint
-npm test -- --runInBand
-npm run build
+
+# Optional early validation. Each deployment runs this again automatically.
+npm run deploy:gcp:prepare
 
 gcloud auth list
 gcloud config set project deweb-preview1
@@ -188,12 +212,12 @@ gcloud config set project deweb-preview1
 export BUSINESS_UI_ALLOWED_GOOGLE_EMAILS="admin1@gmail.com,admin2@gmail.com"
 export RECAPTCHA_ENTERPRISE_SITE_KEY="<production-site-key>"
 
-# Run only after darshanent.co.in/api is routed to delta-backend.
+# Full release: user/public first, then admin.
 npm run deploy:gcp
-
-# Run when internal or shared backend code must also be released.
-npm run deploy:gcp:admin
 ```
+
+Use `npm run deploy:gcp:user` or `npm run deploy:gcp:admin` when only one
+service needs to be updated.
 
 These scripts deploy the current local files, including uncommitted changes.
 Review `git status` and `git diff` before running them.

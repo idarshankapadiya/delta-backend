@@ -83,7 +83,7 @@ admin deployment preflight in place so future policy drift fails closed.
 ### Public/business deployment
 
 ```bash
-npm run deploy:gcp
+npm run deploy:gcp:user
 ```
 
 Script: `scripts/deploy-gcp.sh`
@@ -162,10 +162,11 @@ networking, IAM, OAuth, reCAPTCHA, Firestore TTL, or secret values.
 
 The two services are independent:
 
-- run only `deploy:gcp` for public/business-only changes;
+- run only `deploy:gcp:user` for public/business-only changes;
 - run only `deploy:gcp:admin` for internal-controller-only changes;
-- run both when changing shared catalog/message services, dependencies,
-  validation, configuration or security code.
+- run `deploy:gcp` to prepare once and deploy both services when changing
+  shared catalog/message services, dependencies, validation, configuration or
+  security code.
 
 ## One-time prerequisites
 
@@ -379,20 +380,21 @@ Commit or intentionally review every local change before production deployment.
 
 ```bash
 npm install
-npm run lint
-npm test -- --runInBand
-npm run build
+npm run deploy:gcp:prepare
 ```
 
-For a full release, also run:
+This preparation command performs read-only linting, unit tests, e2e tests, and
+the production build. To automatically fix lint errors before running it:
 
 ```bash
-BUSINESS_UI_ALLOWED_GOOGLE_EMAILS="test-admin@gmail.com" \
-BUSINESS_UI_CSRF_SECRET="12345678901234567890123456789012" \
-BUSINESS_UI_GOOGLE_CLIENT_ID="test-client-id" \
-FIRESTORE_DATABASE_ID="test" \
-npm run test:e2e -- --runInBand
+npm run lint:fix
 ```
+
+Every production deployment command runs `deploy:gcp:prepare` automatically
+and stops before invoking `gcloud` when a local check fails. The combined
+`deploy:gcp` command prepares once, then runs the public and admin deployment
+scripts sequentially. The commands are also available through Yarn, although
+npm and `package-lock.json` remain canonical for this repository.
 
 ### 3. Authenticate the deployer
 
@@ -416,6 +418,15 @@ export RECAPTCHA_ENTERPRISE_PROJECT_ID="deweb-preview1"
 export RECAPTCHA_ENTERPRISE_SITE_KEY="<production-site-key>"
 ```
 
+For a complete release, run the combined command instead of steps 5 and 6:
+
+```bash
+npm run deploy:gcp
+```
+
+It deploys the public service first and the admin service second, stopping at
+the first failure.
+
 ### 5. Deploy the public/business service
 
 The deployment script requires both production hosts to resolve to the
@@ -436,7 +447,7 @@ gcloud compute ssl-certificates describe delta-ui-cert \
 curl --fail --silent https://darshanent.co.in/api/health |
   jq -e '.status == "ok"'
 
-npm run deploy:gcp
+npm run deploy:gcp:user
 ```
 
 ### 6. Deploy the internal admin service
