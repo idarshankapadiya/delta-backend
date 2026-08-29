@@ -89,6 +89,12 @@ export class AppService {
           auth: 'business session',
         },
         {
+          method: 'DELETE',
+          path: '/api/business/messages/:message_id',
+          description: 'Delete one contact message.',
+          auth: 'business session and X-CSRF-Token',
+        },
+        {
           method: 'GET',
           path: '/api/business/catalog/all',
           description: 'Return the catalog for dashboard administration.',

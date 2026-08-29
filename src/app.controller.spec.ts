@@ -42,6 +42,10 @@ describe('AppController', () => {
             path: '/api/business/messages',
           }),
           expect.objectContaining({
+            method: 'DELETE',
+            path: '/api/business/messages/:message_id',
+          }),
+          expect.objectContaining({
             method: 'GET',
             path: '/api/business/catalog/all',
           }),

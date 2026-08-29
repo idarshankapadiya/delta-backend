@@ -53,6 +53,10 @@ describe('AppController (e2e)', () => {
               path: '/api/business/messages',
             }),
             expect.objectContaining({
+              method: 'DELETE',
+              path: '/api/business/messages/:message_id',
+            }),
+            expect.objectContaining({
               method: 'POST/PUT/DELETE',
               path: '/api/business/catalog/**',
             }),
@@ -101,6 +105,7 @@ describe('AppController (e2e)', () => {
       ['PUT', '/api/business/catalog/companies/:company_slug'],
       ['DELETE', '/api/business/catalog/documents/:document_id'],
       ['GET', '/api/business/messages'],
+      ['DELETE', '/api/business/messages/:message_id'],
       ['GET', '/api/internal/messages'],
       ['POST', '/api/internal/catalog/documents'],
       ['PUT', '/api/internal/catalog/documents/:document_id'],
