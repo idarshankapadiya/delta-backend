@@ -9,13 +9,16 @@ import { BusinessCatalogController } from './business-catalog.controller';
 import { BusinessMessageController } from './business-message.controller';
 import { CatalogModule } from '../catalog/catalog.module';
 import { MessageModule } from '../message/message.module';
+import { ProductModule } from '../product/product.module';
+import { BusinessProductController } from './business-product.controller';
 
 @Module({
-  imports: [CatalogModule, MessageModule],
+  imports: [CatalogModule, MessageModule, ProductModule],
   controllers: [
     BusinessAuthController,
     BusinessCatalogController,
     BusinessMessageController,
+    BusinessProductController,
   ],
   providers: [
     BusinessAuthGuard,

@@ -8,6 +8,7 @@ import { MessageModule } from './message/message.module';
 import { BusinessModule } from './business/business.module';
 import { SecurityModule } from './security/security.module';
 import { InternalModule } from './internal/internal.module';
+import { ProductModule } from './product/product.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { InternalModule } from './internal/internal.module';
     BusinessModule,
     CatalogModule,
     MessageModule,
+    ProductModule,
     InternalModule,
   ],
   controllers: [AppController, HealthController],

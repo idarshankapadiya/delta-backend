@@ -14,6 +14,7 @@
     "deploy:gcp": "npm run deploy:gcp:prepare && bash scripts/deploy-gcp.sh && bash scripts/deploy-gcp-admin.sh",
     "deploy:gcp:user": "npm run deploy:gcp:prepare && bash scripts/deploy-gcp.sh",
     "deploy:gcp:admin": "npm run deploy:gcp:prepare && bash scripts/deploy-gcp-admin.sh",
+    "products:import": "node scripts/import-products.mjs",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start-backend": "nest start",
     "start-backend:dev": "nest start --watch",

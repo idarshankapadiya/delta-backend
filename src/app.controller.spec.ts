@@ -26,6 +26,14 @@ describe('AppController', () => {
             path: '/api/health',
           }),
           expect.objectContaining({
+            method: 'GET',
+            path: '/api/products',
+          }),
+          expect.objectContaining({
+            method: 'GET',
+            path: '/api/products/:productId',
+          }),
+          expect.objectContaining({
             method: 'POST',
             path: '/api/message',
           }),
@@ -40,6 +48,34 @@ describe('AppController', () => {
           expect.objectContaining({
             method: 'POST/PUT/DELETE',
             path: '/api/business/catalog/**',
+          }),
+          expect.objectContaining({
+            method: 'POST',
+            path: '/api/business/products',
+          }),
+          expect.objectContaining({
+            method: 'PUT/DELETE',
+            path: '/api/business/products/:productId',
+          }),
+          expect.objectContaining({
+            method: 'DELETE',
+            path: '/api/business/products/out-of-stock/:productId',
+          }),
+          expect.objectContaining({
+            method: 'POST',
+            path: '/api/business/companies',
+          }),
+          expect.objectContaining({
+            method: 'PUT/DELETE',
+            path: '/api/business/companies/:companyId',
+          }),
+          expect.objectContaining({
+            method: 'POST',
+            path: '/api/business/categories',
+          }),
+          expect.objectContaining({
+            method: 'PUT/DELETE',
+            path: '/api/business/categories/:categoryId',
           }),
           expect.objectContaining({
             method: 'POST',

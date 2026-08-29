@@ -33,6 +33,31 @@ export class AppService {
           auth: 'none',
         },
         {
+          method: 'GET',
+          path: '/api/companies',
+          description: 'Return active product companies.',
+          auth: 'none',
+        },
+        {
+          method: 'GET',
+          path: '/api/categories',
+          description:
+            'Return active product categories, optionally by company.',
+          auth: 'none',
+        },
+        {
+          method: 'GET',
+          path: '/api/products',
+          description: 'Return a filtered, cursor-paginated product listing.',
+          auth: 'none',
+        },
+        {
+          method: 'GET',
+          path: '/api/products/:productId',
+          description: 'Return one active product with detail asset URLs.',
+          auth: 'none',
+        },
+        {
           method: 'POST',
           path: '/api/message',
           description: 'Create a contact form message in Firestore.',
@@ -73,6 +98,49 @@ export class AppService {
           method: 'POST/PUT/DELETE',
           path: '/api/business/catalog/**',
           description: 'Create, update, rename, or delete catalog content.',
+          auth: 'business session and X-CSRF-Token',
+        },
+        {
+          method: 'POST',
+          path: '/api/business/products',
+          description: 'Create a product in Firestore.',
+          auth: 'business session and X-CSRF-Token',
+        },
+        {
+          method: 'PUT/DELETE',
+          path: '/api/business/products/:productId',
+          description: 'Update or delete a particular product.',
+          auth: 'business session and X-CSRF-Token',
+        },
+        {
+          method: 'DELETE',
+          path: '/api/business/products/out-of-stock/:productId',
+          description:
+            'Delete a particular product only when it is out of stock.',
+          auth: 'business session and X-CSRF-Token',
+        },
+        {
+          method: 'POST',
+          path: '/api/business/companies',
+          description: 'Create a product company.',
+          auth: 'business session and X-CSRF-Token',
+        },
+        {
+          method: 'PUT/DELETE',
+          path: '/api/business/companies/:companyId',
+          description: 'Update or safely delete a product company.',
+          auth: 'business session and X-CSRF-Token',
+        },
+        {
+          method: 'POST',
+          path: '/api/business/categories',
+          description: 'Create a product category.',
+          auth: 'business session and X-CSRF-Token',
+        },
+        {
+          method: 'PUT/DELETE',
+          path: '/api/business/categories/:categoryId',
+          description: 'Update or safely delete a product category.',
           auth: 'business session and X-CSRF-Token',
         },
         {
