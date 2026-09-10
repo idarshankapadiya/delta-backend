@@ -29,6 +29,7 @@ const touchIntervalMs = 5 * 60 * 1000;
 const maxSessionsPerUser = 5;
 
 export interface BusinessAuthGrant {
+  authProvider: 'google' | 'local_bypass';
   csrfToken: string;
   rotated: boolean;
   session: AuthenticatedBusinessSession;
@@ -88,6 +89,10 @@ export class BusinessAuthService {
     token: string | undefined,
     rotate = false,
   ): Promise<BusinessAuthGrant> {
+    if (this.isLocalAuthBypassEnabled()) {
+      return this.createLocalBypassGrant();
+    }
+
     if (!token) {
       throw new UnauthorizedException('Business authentication is required');
     }
@@ -137,6 +142,7 @@ export class BusinessAuthService {
     }
 
     return {
+      authProvider: 'google',
       csrfToken: this.createCsrfToken(token),
       rotated: false,
       session: { ...session, tokenHash },
@@ -155,6 +161,10 @@ export class BusinessAuthService {
     token: string | undefined,
     suppliedCsrf: string | undefined,
   ): void {
+    if (this.isLocalAuthBypassEnabled()) {
+      return;
+    }
+
     if (!token || !suppliedCsrf) {
       throw new ForbiddenException('CSRF token is required');
     }
@@ -235,6 +245,7 @@ export class BusinessAuthService {
 
     await this.store.createSession(tokenHash, session);
     return {
+      authProvider: 'google',
       csrfToken: this.createCsrfToken(token),
       rotated: false,
       session: { ...session, tokenHash },
@@ -265,6 +276,7 @@ export class BusinessAuthService {
     await this.store.createSession(tokenHash, session);
     await this.store.revokeSession(previousHash, tokenHash);
     return {
+      authProvider: 'google',
       csrfToken: this.createCsrfToken(token),
       rotated: true,
       session: { ...session, tokenHash },
@@ -312,5 +324,45 @@ export class BusinessAuthService {
       .split(',')
       .map((clientId) => clientId.trim())
       .filter(Boolean);
+  }
+
+  private isLocalAuthBypassEnabled(): boolean {
+    return (
+      process.env.NODE_ENV !== 'production' &&
+      process.env.BUSINESS_AUTH_BYPASS_FOR_LOCAL === 'true'
+    );
+  }
+
+  private createLocalBypassGrant(): BusinessAuthGrant {
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + absoluteSessionMs);
+    const idleExpiresAt = new Date(now.getTime() + idleSessionMs);
+    const user: BusinessUser = {
+      email: 'local-admin@localhost',
+      name: 'Local Admin',
+      role: 'business_admin',
+      status: 'active',
+      subject: 'local-development',
+    };
+
+    return {
+      authProvider: 'local_bypass',
+      csrfToken: 'local-development-bypass',
+      rotated: false,
+      session: {
+        createdAt: now,
+        email: user.email,
+        expiresAt,
+        idleExpiresAt,
+        lastSeenAt: now,
+        name: user.name,
+        role: user.role,
+        rotateAfter: expiresAt,
+        subject: user.subject,
+        tokenHash: 'local-development-bypass',
+      },
+      token: 'local-development-bypass',
+      user,
+    };
   }
 }

@@ -12,9 +12,11 @@ import { EnvBusinessAuthorizationProvider } from './business-authorization.provi
 
 describe('BusinessAuthService', () => {
   const originalEnvironment = {
+    bypass: process.env.BUSINESS_AUTH_BYPASS_FOR_LOCAL,
     clientId: process.env.BUSINESS_UI_GOOGLE_CLIENT_ID,
     emails: process.env.BUSINESS_UI_ALLOWED_GOOGLE_EMAILS,
     csrf: process.env.BUSINESS_UI_CSRF_SECRET,
+    nodeEnv: process.env.NODE_ENV,
   };
   const user: BusinessUser = {
     email: 'allowed@gmail.com',
@@ -45,6 +47,7 @@ describe('BusinessAuthService', () => {
     process.env.BUSINESS_UI_ALLOWED_GOOGLE_EMAILS = 'allowed@gmail.com';
     process.env.BUSINESS_UI_CSRF_SECRET =
       'a-test-secret-with-at-least-thirty-two-characters';
+    delete process.env.BUSINESS_AUTH_BYPASS_FOR_LOCAL;
     store.bindUser.mockResolvedValue(user);
     store.createSession.mockResolvedValue(undefined);
     store.listActiveSessions.mockResolvedValue([]);
@@ -77,6 +80,11 @@ describe('BusinessAuthService', () => {
       originalEnvironment.emails,
     );
     restoreEnvironment('BUSINESS_UI_CSRF_SECRET', originalEnvironment.csrf);
+    restoreEnvironment(
+      'BUSINESS_AUTH_BYPASS_FOR_LOCAL',
+      originalEnvironment.bypass,
+    );
+    restoreEnvironment('NODE_ENV', originalEnvironment.nodeEnv);
   });
 
   it('creates a hashed persistent session for an allowed Google subject', async () => {
@@ -158,6 +166,34 @@ describe('BusinessAuthService', () => {
     expect(() =>
       service.validateCsrf('opaque-session-token', 'wrong-token'),
     ).toThrow(ForbiddenException);
+  });
+
+  it('bypasses business sessions and CSRF only for local development', async () => {
+    process.env.NODE_ENV = 'development';
+    process.env.BUSINESS_AUTH_BYPASS_FOR_LOCAL = 'true';
+
+    const grant = await service.restoreSession(undefined);
+
+    expect(grant.authProvider).toBe('local_bypass');
+    expect(grant.user).toMatchObject({
+      email: 'local-admin@localhost',
+      role: 'business_admin',
+      subject: 'local-development',
+    });
+    expect(() => service.validateCsrf(undefined, undefined)).not.toThrow();
+    expect(store.getSession).not.toHaveBeenCalled();
+  });
+
+  it('never enables the local authentication bypass in production', async () => {
+    process.env.NODE_ENV = 'production';
+    process.env.BUSINESS_AUTH_BYPASS_FOR_LOCAL = 'true';
+
+    await expect(service.restoreSession(undefined)).rejects.toThrow(
+      'Business authentication is required',
+    );
+    expect(() => service.validateCsrf(undefined, undefined)).toThrow(
+      ForbiddenException,
+    );
   });
 });
 

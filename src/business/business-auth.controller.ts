@@ -82,7 +82,7 @@ export class BusinessAuthController {
   private createSessionResponse(grant: BusinessAuthGrant) {
     return {
       ok: true,
-      auth_provider: 'google',
+      auth_provider: grant.authProvider,
       authorized: true,
       csrf_token: grant.csrfToken,
       email: grant.user.email,

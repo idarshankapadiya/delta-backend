@@ -85,6 +85,7 @@ function createGrant(): BusinessAuthGrant {
   const idleExpiresAt = new Date('2026-07-10T00:00:00.000Z');
 
   return {
+    authProvider: 'google',
     csrfToken: 'csrf-token',
     rotated: false,
     token: 'business-session-token',

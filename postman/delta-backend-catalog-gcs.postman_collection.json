@@ -166,6 +166,10 @@
       "value": "postman-product-category"
     },
     {
+      "key": "admin_new_product_id",
+      "value": "postman-new-product"
+    },
+    {
       "key": "admin_out_of_stock_product_id",
       "value": "postman-out-of-stock-product"
     },
@@ -2278,6 +2282,57 @@
               }
             },
             {
+              "name": "Add New Product",
+              "description": "Creates a new product that appears in the public product API when active. Before sending again, use a unique admin_new_product_id and change the product fields as needed. companyId and categoryId must reference existing records.",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('new product is created', function () {",
+                      "  pm.response.to.have.status(201);",
+                      "});",
+                      "const json = pm.response.json();",
+                      "pm.test('response confirms success', function () {",
+                      "  pm.expect(json.ok).to.eql(true);",
+                      "});",
+                      "pm.test('created product id matches', function () {",
+                      "  pm.expect(json.productId).to.eql(pm.collectionVariables.get('admin_new_product_id'));",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/products",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"productId\": \"{{admin_new_product_id}}\",\n  \"name\": \"Postman Product Fully Updated\",\n  \"sku\": \"PM-OOS-UPDATED\",\n  \"modelNumber\": \"PM-MODEL-UPDATED\",\n  \"companyId\": \"{{admin_product_company_id}}\",\n  \"categoryId\": \"{{admin_product_category_id}}\",\n  \"price\": 1499.5,\n  \"currency\": \"INR\",\n  \"discountPercentage\": 12.5,\n  \"inStock\": false,\n  \"stockQuantity\": 0,\n  \"active\": true,\n  \"shortDescription\": \"Updated short product description.\",\n  \"description\": \"Updated name, price, discount, inventory, descriptions, and all product specifications.\",\n  \"specifications\": {\n    \"voltage\": \"415 V\",\n    \"poles\": 4,\n    \"ratedCurrent\": \"32 A\",\n    \"certified\": true,\n    \"warrantyYears\": 2\n  }\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
               "name": "Add Out-Of-Stock Product",
               "event": [
                 {
@@ -2703,6 +2758,45 @@
                   }
                 ],
                 "url": "{{base_url}}/api/business/products/{{admin_product_id}}"
+              }
+            },
+            {
+              "name": "Delete New Product During CRUD Cleanup",
+              "description": "Collection-runner cleanup for Add New Product. Do not send this request when you want the newly added product to remain on the product page.",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('new product is deleted during cleanup', function () {",
+                      "  pm.response.to.have.status(200);",
+                      "});",
+                      "const json = pm.response.json();",
+                      "pm.test('deleted product id matches', function () {",
+                      "  pm.expect(json.deletedProductId).to.eql(pm.collectionVariables.get('admin_new_product_id'));",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/products/{{admin_new_product_id}}"
               }
             },
             {

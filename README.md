@@ -42,6 +42,17 @@ Local development:
 npm run start-backend:dev
 ```
 
+To call `/api/business/**` locally without Google sign-in, add this to the
+ignored local `.env` file and restart the backend:
+
+```dotenv
+BUSINESS_AUTH_BYPASS_FOR_LOCAL=true
+```
+
+This also bypasses business CSRF checks so Postman or curl can call write
+endpoints directly. The bypass is always disabled when `NODE_ENV=production`,
+even if the variable is accidentally present.
+
 Tests:
 
 ```bash
