@@ -1,0 +1,1302 @@
+openapi: 3.0.0
+paths:
+  /api/business/auth/google:
+    post:
+      operationId: BusinessAuth_authenticateWithGoogle
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BusinessGoogleAuthDto"
+      responses:
+        "201":
+          description: ""
+      summary: Create a business session with Google
+      tags:
+        - Business Authentication
+  /api/business/auth/me:
+    get:
+      operationId: BusinessAuth_getCurrentUser
+      parameters: []
+      responses:
+        "200":
+          description: ""
+      security:
+        - businessSession: []
+      summary: Get the current business session
+      tags:
+        - Business Authentication
+  /api/business/auth/logout:
+    post:
+      operationId: BusinessAuth_logout
+      parameters: []
+      responses:
+        "201":
+          description: ""
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Log out of the business session
+      tags:
+        - Business Authentication
+  /api/business/catalog/all:
+    get:
+      operationId: BusinessCatalog_getCatalogAll
+      parameters: []
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+      security:
+        - businessSession: []
+      summary: Get catalog data for business administration
+      tags:
+        - Business Catalog
+  /api/business/catalog/documents:
+    post:
+      operationId: BusinessCatalog_createDocument
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - company_name
+                - document_name
+                - file
+              properties:
+                company_name:
+                  type: string
+                category_name:
+                  type: string
+                document_name:
+                  type: string
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Upload a catalog PDF document
+      tags:
+        - Business Catalog
+  /api/business/catalog/documents/access:
+    post:
+      operationId: BusinessCatalog_createDocumentAccess
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DocumentAccessDto"
+      responses:
+        "201":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Create an administrative signed document URL
+      tags:
+        - Business Catalog
+  /api/business/catalog/documents/{document_id}:
+    put:
+      operationId: BusinessCatalog_updateDocument
+      parameters:
+        - name: document_id
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                document_name:
+                  type: string
+                category_name:
+                  type: string
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Update or replace a catalog PDF document
+      tags:
+        - Business Catalog
+    delete:
+      operationId: BusinessCatalog_deleteDocument
+      parameters:
+        - name: document_id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Delete a catalog document
+      tags:
+        - Business Catalog
+  /api/business/catalog/companies/{company_slug}:
+    put:
+      operationId: BusinessCatalog_updateCompany
+      parameters:
+        - name: company_slug
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCatalogCompanyDto"
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Rename or merge a catalog company
+      tags:
+        - Business Catalog
+  /api/business/messages:
+    get:
+      operationId: BusinessMessage_getMessages
+      parameters: []
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+      security:
+        - businessSession: []
+      summary: List contact messages
+      tags:
+        - Business Messages
+  /api/business/messages/{message_id}:
+    delete:
+      operationId: BusinessMessage_deleteMessage
+      parameters:
+        - name: message_id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Delete a contact message
+      tags:
+        - Business Messages
+  /api/business/companies:
+    post:
+      operationId: BusinessProduct_createCompany
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProductCompanyDto"
+      responses:
+        "201":
+          description: ""
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Create a product company
+      tags:
+        - Business Products
+  /api/business/companies/{companyId}:
+    put:
+      operationId: BusinessProduct_updateCompany
+      parameters:
+        - name: companyId
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProductCompanyDto"
+      responses:
+        "200":
+          description: ""
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Update a product company
+      tags:
+        - Business Products
+    delete:
+      operationId: BusinessProduct_deleteCompany
+      parameters:
+        - name: companyId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Delete an unused product company
+      tags:
+        - Business Products
+  /api/business/categories:
+    post:
+      operationId: BusinessProduct_createCategory
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProductCategoryDto"
+      responses:
+        "201":
+          description: ""
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Create a product category
+      tags:
+        - Business Products
+  /api/business/categories/{categoryId}:
+    put:
+      operationId: BusinessProduct_updateCategory
+      parameters:
+        - name: categoryId
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProductCategoryDto"
+      responses:
+        "200":
+          description: ""
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Update a product category
+      tags:
+        - Business Products
+    delete:
+      operationId: BusinessProduct_deleteCategory
+      parameters:
+        - name: categoryId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Delete an unused product category
+      tags:
+        - Business Products
+  /api/business/products:
+    post:
+      operationId: BusinessProduct_createProduct
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProductDto"
+      responses:
+        "201":
+          description: ""
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Create a product and optionally its company or category
+      tags:
+        - Business Products
+  /api/business/products/{productId}:
+    put:
+      operationId: BusinessProduct_updateProduct
+      parameters:
+        - name: productId
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProductDto"
+      responses:
+        "200":
+          description: ""
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Update a product
+      tags:
+        - Business Products
+    delete:
+      operationId: BusinessProduct_deleteProduct
+      parameters:
+        - name: productId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Delete a product
+      tags:
+        - Business Products
+  /api/business/products/out-of-stock/{productId}:
+    delete:
+      operationId: BusinessProduct_deleteOutOfStockProduct
+      parameters:
+        - name: productId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Delete a product only when it is out of stock
+      tags:
+        - Business Products
+  /api/catalog/all:
+    get:
+      operationId: Catalog_getCatalogAll
+      parameters: []
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+      summary: Get public catalog navigation
+      tags:
+        - Catalog
+  /api/catalog/library:
+    post:
+      operationId: Catalog_getCatalogLibrary
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CatalogLibraryDto"
+      responses:
+        "201":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+      summary: Get selected company catalog libraries
+      tags:
+        - Catalog
+  /api/catalog/access:
+    post:
+      operationId: Catalog_createAccess
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CatalogAccessDto"
+      responses:
+        "201":
+          description: ""
+      summary: Record a catalog access inquiry
+      tags:
+        - Catalog
+  /api/catalog/access/google:
+    post:
+      operationId: Catalog_createGoogleAccess
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CatalogGoogleAccessDto"
+      responses:
+        "201":
+          description: ""
+      summary: Create catalog access with Google
+      tags:
+        - Catalog
+  /api/catalog/access/google/redirect:
+    post:
+      operationId: Catalog_createGoogleRedirectAccess
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/schemas/CatalogGoogleRedirectDto"
+      responses:
+        "303":
+          description: Redirect to the frontend home page.
+      summary: Handle Google catalog access redirect
+      tags:
+        - Catalog
+  /api/catalog/access/me:
+    get:
+      operationId: Catalog_getAccessMe
+      parameters: []
+      responses:
+        "200":
+          description: ""
+      security:
+        - catalogAccess: []
+      summary: Get the current catalog access session
+      tags:
+        - Catalog
+  /api/catalog/access/request-otp:
+    post:
+      operationId: Catalog_requestAccessOtp
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CatalogOtpRequestDto"
+      responses:
+        "201":
+          description: ""
+      summary: Request a catalog access OTP
+      tags:
+        - Catalog
+  /api/catalog/access/verify-otp:
+    post:
+      operationId: Catalog_verifyAccessOtp
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CatalogVerifyOtpDto"
+      responses:
+        "201":
+          description: ""
+      summary: Verify a catalog access OTP
+      tags:
+        - Catalog
+  /api/catalog/documents/access:
+    post:
+      operationId: Catalog_createDocumentAccess
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DocumentAccessDto"
+      responses:
+        "201":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+      summary: Create a signed catalog document URL
+      tags:
+        - Catalog
+  /api/catalog/access/logout:
+    post:
+      operationId: Catalog_logoutAccess
+      parameters: []
+      responses:
+        "201":
+          description: ""
+      security:
+        - catalogAccess: []
+      summary: Log out of catalog access
+      tags:
+        - Catalog
+  /api/message:
+    post:
+      operationId: Message_createMessage
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMessageDto"
+      responses:
+        "201":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+      summary: Submit a public contact message
+      tags:
+        - Contact Messages
+  /api/companies:
+    get:
+      operationId: Product_getCompanies
+      parameters: []
+      responses:
+        "200":
+          description: ""
+      summary: List active product companies
+      tags:
+        - Products
+  /api/categories:
+    get:
+      operationId: Product_getCategories
+      parameters:
+        - name: companyId
+          required: false
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+      summary: List active product categories
+      tags:
+        - Products
+  /api/products:
+    get:
+      operationId: Product_getProducts
+      parameters:
+        - name: companyId
+          required: false
+          in: query
+          schema:
+            type: string
+        - name: categoryId
+          required: false
+          in: query
+          schema:
+            type: string
+        - name: subcategoryId
+          required: false
+          in: query
+          schema:
+            type: string
+        - name: stock
+          required: false
+          in: query
+          schema:
+            type: string
+            enum:
+              - in_stock
+              - out_of_stock
+        - name: search
+          required: false
+          in: query
+          schema:
+            maxLength: 120
+            type: string
+        - name: sort
+          required: true
+          in: query
+          schema:
+            default: name_asc
+            type: string
+            enum:
+              - name_asc
+              - name_desc
+              - price_asc
+              - price_desc
+        - name: limit
+          required: true
+          in: query
+          schema:
+            minimum: 1
+            maximum: 100
+            default: 30
+            allOf:
+              - $ref: "#/components/schemas/Object"
+        - name: cursor
+          required: false
+          in: query
+          schema:
+            maxLength: 2048
+            type: string
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+      summary: List and filter active products
+      tags:
+        - Products
+  /api/products/{productId}:
+    get:
+      operationId: Product_getProduct
+      parameters:
+        - name: productId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+      summary: Get active product details
+      tags:
+        - Products
+  /api/internal/catalog/documents:
+    post:
+      operationId: InternalCatalog_createDocument
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - company_name
+                - document_name
+                - file
+              properties:
+                company_name:
+                  type: string
+                category_name:
+                  type: string
+                document_name:
+                  type: string
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+      security:
+        - internalAdmin: []
+      summary: Upload a catalog PDF through the internal API
+      tags:
+        - Internal Catalog
+  /api/internal/catalog/documents/{document_id}:
+    put:
+      operationId: InternalCatalog_updateDocument
+      parameters:
+        - name: document_id
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                document_name:
+                  type: string
+                category_name:
+                  type: string
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+      security:
+        - internalAdmin: []
+      summary: Update a catalog PDF through the internal API
+      tags:
+        - Internal Catalog
+    delete:
+      operationId: InternalCatalog_deleteDocument
+      parameters:
+        - name: document_id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - internalAdmin: []
+      summary: Delete a catalog document through the internal API
+      tags:
+        - Internal Catalog
+  /api/internal/catalog/companies/{company_slug}:
+    put:
+      operationId: InternalCatalog_updateCompany
+      parameters:
+        - name: company_slug
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCatalogCompanyDto"
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+      security:
+        - internalAdmin: []
+      summary: Rename a catalog company through the internal API
+      tags:
+        - Internal Catalog
+  /api/internal/messages:
+    get:
+      operationId: InternalMessage_getMessages
+      parameters: []
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+      security:
+        - internalAdmin: []
+      summary: List contact messages through the internal API
+      tags:
+        - Internal Messages
+  /api:
+    get:
+      operationId: App_getApiIndex
+      parameters: []
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+      summary: List available API endpoints
+      tags:
+        - System
+  /api/health:
+    get:
+      operationId: Health_check
+      parameters: []
+      responses:
+        "200":
+          description: ""
+      summary: Check backend health
+      tags:
+        - System
+info:
+  title: Delta Backend API
+  description: Public catalog and product APIs, catalog access flows,
+    authenticated business administration, and internal administration
+    endpoints.
+  version: 0.0.1
+  contact: {}
+tags:
+  - name: System
+    description: API discovery and health endpoints.
+  - name: Products
+    description: Public product discovery endpoints.
+  - name: Catalog
+    description: Public catalog and access endpoints.
+  - name: Contact Messages
+    description: Public contact form submission.
+  - name: Business Authentication
+    description: Business dashboard authentication and session endpoints.
+  - name: Business Products
+    description: Authenticated product administration.
+  - name: Business Catalog
+    description: Authenticated catalog administration.
+  - name: Business Messages
+    description: Authenticated contact message management.
+  - name: Internal Catalog
+    description: Service-to-service catalog administration.
+  - name: Internal Messages
+    description: Service-to-service message access.
+servers: []
+components:
+  securitySchemes:
+    businessSession:
+      type: apiKey
+      in: cookie
+      name: business_session
+      description: Business session cookie. Production uses __Host-business_session.
+    catalogAccess:
+      type: apiKey
+      in: cookie
+      name: catalog_access
+      description: Catalog access session cookie.
+    csrfToken:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+      description: CSRF token returned by business authentication.
+    internalAdmin:
+      type: apiKey
+      in: header
+      name: X-Backend-Admin-Token
+      description: Token for the optional internal administration API.
+  schemas:
+    BusinessGoogleAuthDto:
+      type: object
+      properties:
+        id_token:
+          type: string
+          maxLength: 4096
+      required:
+        - id_token
+    DocumentAccessDto:
+      type: object
+      properties:
+        company_slug:
+          type: string
+        category_slug:
+          type: string
+        document_slug:
+          type: string
+        action:
+          enum:
+            - preview
+            - download
+          type: string
+      required:
+        - company_slug
+        - document_slug
+        - action
+    UpdateCatalogCompanyDto:
+      type: object
+      properties:
+        company_name:
+          type: string
+      required:
+        - company_name
+    CreateProductCompanyDto:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          maxLength: 160
+        slug:
+          type: string
+        logoPath:
+          type: string
+          maxLength: 1024
+        active:
+          type: boolean
+        sortOrder:
+          type: number
+          minimum: 0
+      required:
+        - id
+        - name
+    UpdateProductCompanyDto:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 160
+        slug:
+          type: string
+        logoPath:
+          type: string
+          maxLength: 1024
+        active:
+          type: boolean
+        sortOrder:
+          type: number
+          minimum: 0
+    CreateProductCategoryDto:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          maxLength: 160
+        slug:
+          type: string
+        companyIds:
+          maxItems: 1000
+          type: array
+          items:
+            type: string
+        active:
+          type: boolean
+        sortOrder:
+          type: number
+          minimum: 0
+      required:
+        - id
+        - name
+        - companyIds
+    UpdateProductCategoryDto:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 160
+        slug:
+          type: string
+        companyIds:
+          maxItems: 1000
+          type: array
+          items:
+            type: string
+        active:
+          type: boolean
+        sortOrder:
+          type: number
+          minimum: 0
+    CreateProductDto:
+      type: object
+      properties:
+        productId:
+          type: string
+        name:
+          type: string
+          maxLength: 240
+        sku:
+          type: string
+          maxLength: 160
+        modelNumber:
+          type: string
+          maxLength: 160
+        isNewCompany:
+          type: boolean
+        companyName:
+          type: string
+          maxLength: 160
+        companyId:
+          type: string
+        isNewCategory:
+          type: boolean
+        categoryName:
+          type: string
+          maxLength: 160
+        categoryId:
+          type: string
+        subcategoryId:
+          type: string
+        subcategoryName:
+          type: string
+          maxLength: 160
+        subcategorySlug:
+          type: string
+        price:
+          type: number
+          minimum: 0
+        currency:
+          type: string
+        discountPercentage:
+          type: number
+          minimum: 0
+          maximum: 100
+        inStock:
+          type: boolean
+        stockQuantity:
+          type: number
+          minimum: 0
+        active:
+          type: boolean
+        shortDescription:
+          type: string
+          maxLength: 500
+        description:
+          type: string
+          maxLength: 20000
+        specifications:
+          type: object
+          additionalProperties: true
+        thumbnailPath:
+          type: string
+          maxLength: 1024
+        mainImagePath:
+          type: string
+          maxLength: 1024
+        additionalImagePaths:
+          maxItems: 20
+          type: array
+          items:
+            type: string
+            maxLength: 1024
+        brochurePath:
+          type: string
+          maxLength: 1024
+      required:
+        - name
+        - price
+        - inStock
+    UpdateProductDto:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 240
+        sku:
+          type: string
+          maxLength: 160
+        modelNumber:
+          type: string
+          maxLength: 160
+        companyId:
+          type: string
+        categoryId:
+          type: string
+        subcategoryId:
+          type: string
+        subcategoryName:
+          type: string
+          maxLength: 160
+        subcategorySlug:
+          type: string
+        price:
+          type: number
+          minimum: 0
+        currency:
+          type: string
+        discountPercentage:
+          type: number
+          minimum: 0
+          maximum: 100
+        inStock:
+          type: boolean
+        stockQuantity:
+          type: number
+          minimum: 0
+        active:
+          type: boolean
+        shortDescription:
+          type: string
+          maxLength: 500
+        description:
+          type: string
+          maxLength: 20000
+        specifications:
+          type: object
+          additionalProperties: true
+        thumbnailPath:
+          type: string
+          maxLength: 1024
+        mainImagePath:
+          type: string
+          maxLength: 1024
+        additionalImagePaths:
+          maxItems: 20
+          type: array
+          items:
+            type: string
+            maxLength: 1024
+        brochurePath:
+          type: string
+          maxLength: 1024
+    CatalogLibraryDto:
+      type: object
+      properties:
+        company_slugs:
+          minItems: 1
+          type: array
+          items:
+            type: string
+      required:
+        - company_slugs
+    CatalogAccessDto:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 120
+        mobile:
+          type: string
+          maxLength: 30
+        email:
+          type: string
+          maxLength: 160
+          format: email
+        message:
+          type: string
+          maxLength: 1000
+      required:
+        - name
+        - mobile
+    CatalogGoogleAccessDto:
+      type: object
+      properties:
+        id_token:
+          type: string
+          maxLength: 4096
+      required:
+        - id_token
+    CatalogGoogleRedirectDto:
+      type: object
+      properties:
+        credential:
+          type: string
+          maxLength: 4096
+        g_csrf_token:
+          type: string
+          maxLength: 512
+      required:
+        - credential
+        - g_csrf_token
+    CatalogOtpRequestDto:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 120
+        mobile:
+          type: string
+          maxLength: 30
+        email:
+          type: string
+          maxLength: 160
+          format: email
+        message:
+          type: string
+          maxLength: 1000
+        channel:
+          enum:
+            - whatsapp
+            - email
+          type: string
+      required:
+        - name
+        - channel
+    CatalogVerifyOtpDto:
+      type: object
+      properties:
+        challenge_id:
+          type: string
+          maxLength: 40
+        mobile:
+          type: string
+          maxLength: 30
+        email:
+          type: string
+          maxLength: 160
+          format: email
+        otp:
+          type: string
+          maxLength: 12
+      required:
+        - challenge_id
+        - otp
+    CreateMessageDto:
+      type: object
+      properties:
+        captcha_token:
+          type: string
+          maxLength: 4096
+        name:
+          type: string
+          maxLength: 120
+        mobile:
+          type: string
+          maxLength: 30
+        email:
+          type: string
+          maxLength: 160
+          format: email
+        message:
+          type: string
+          maxLength: 2000
+      required:
+        - name
+        - mobile
+        - email
+        - message
+    Object:
+      type: object
+      properties: {}

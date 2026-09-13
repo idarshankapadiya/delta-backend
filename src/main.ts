@@ -11,6 +11,7 @@ import { AppModule } from './app.module';
 import { getHttpHost, getHttpPort } from './config/http.config';
 import { getCatalogUploadMaxBytes } from './config/catalog.config';
 import { corsAllowedMethods, handleCorsOrigin } from './config/cors.config';
+import { setupSwagger } from './openapi';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -45,6 +46,7 @@ async function bootstrap() {
   );
 
   app.setGlobalPrefix('api');
+  setupSwagger(app);
   const port = getHttpPort();
   const host = getHttpHost();
   await app.listen(port, host);

@@ -13,6 +13,7 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateIf,
 } from 'class-validator';
 
 export const productResourceIdPattern = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
@@ -158,9 +159,10 @@ export class UpdateProductCategoryDto {
 }
 
 export class CreateProductDto {
+  @IsOptional()
   @IsString()
   @Matches(productResourceIdPattern)
-  productId: string;
+  productId?: string;
 
   @IsString()
   @IsNotEmpty()
@@ -177,13 +179,35 @@ export class CreateProductDto {
   @MaxLength(160)
   modelNumber?: string;
 
-  @IsString()
-  @Matches(productResourceIdPattern)
-  companyId: string;
+  @IsOptional()
+  @IsBoolean()
+  isNewCompany?: boolean;
 
+  @ValidateIf((input: CreateProductDto) => input.isNewCompany === true)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(160)
+  companyName?: string;
+
+  @ValidateIf((input: CreateProductDto) => input.isNewCompany !== true)
   @IsString()
   @Matches(productResourceIdPattern)
-  categoryId: string;
+  companyId?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isNewCategory?: boolean;
+
+  @ValidateIf((input: CreateProductDto) => input.isNewCategory === true)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(160)
+  categoryName?: string;
+
+  @ValidateIf((input: CreateProductDto) => input.isNewCategory !== true)
+  @IsString()
+  @Matches(productResourceIdPattern)
+  categoryId?: string;
 
   @IsOptional()
   @IsString()

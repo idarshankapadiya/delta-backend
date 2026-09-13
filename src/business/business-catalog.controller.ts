@@ -10,6 +10,14 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import {
+  ApiBody,
+  ApiConsumes,
+  ApiCookieAuth,
+  ApiOperation,
+  ApiSecurity,
+  ApiTags,
+} from '@nestjs/swagger';
 import type { FastifyRequest } from 'fastify';
 import { CatalogMutationService } from '../catalog/catalog-mutation.service';
 import { CatalogService } from '../catalog/catalog.service';
@@ -27,6 +35,7 @@ import { BusinessCsrfGuard } from './business-csrf.guard';
 @Controller('business/catalog')
 @UseGuards(BusinessSiteOriginGuard, BusinessAuthGuard)
 @UseInterceptors(NoStoreInterceptor)
+@ApiTags('Business Catalog')
 export class BusinessCatalogController {
   constructor(
     private readonly catalogService: CatalogService,
@@ -35,12 +44,29 @@ export class BusinessCatalogController {
   ) {}
 
   @Get('all')
+  @ApiCookieAuth('businessSession')
+  @ApiOperation({ summary: 'Get catalog data for business administration' })
   getCatalogAll() {
     return this.catalogService.getCatalogAll();
   }
 
   @Post('documents')
   @UseGuards(BusinessCsrfGuard)
+  @ApiSecurity({ businessSession: [], csrfToken: [] })
+  @ApiOperation({ summary: 'Upload a catalog PDF document' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['company_name', 'document_name', 'file'],
+      properties: {
+        company_name: { type: 'string' },
+        category_name: { type: 'string' },
+        document_name: { type: 'string' },
+        file: { type: 'string', format: 'binary' },
+      },
+    },
+  })
   async createDocument(@Req() request: FastifyRequest) {
     const result = await this.mutations.createDocument(request);
     this.auditMutation(request, 'catalog_document_create');
@@ -49,12 +75,27 @@ export class BusinessCatalogController {
 
   @Post('documents/access')
   @UseGuards(BusinessCsrfGuard)
+  @ApiSecurity({ businessSession: [], csrfToken: [] })
+  @ApiOperation({ summary: 'Create an administrative signed document URL' })
   createDocumentAccess(@Body() body: DocumentAccessDto) {
     return this.catalogService.createSignedUrlForSelection(body, body.action);
   }
 
   @Put('documents/:document_id')
   @UseGuards(BusinessCsrfGuard)
+  @ApiSecurity({ businessSession: [], csrfToken: [] })
+  @ApiOperation({ summary: 'Update or replace a catalog PDF document' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        document_name: { type: 'string' },
+        category_name: { type: 'string' },
+        file: { type: 'string', format: 'binary' },
+      },
+    },
+  })
   async updateDocument(
     @Param() params: CatalogDocumentParamsDto,
     @Req() request: FastifyRequest,
@@ -69,6 +110,8 @@ export class BusinessCatalogController {
 
   @Put('companies/:company_slug')
   @UseGuards(BusinessCsrfGuard)
+  @ApiSecurity({ businessSession: [], csrfToken: [] })
+  @ApiOperation({ summary: 'Rename or merge a catalog company' })
   async updateCompany(
     @Param() params: CatalogCompanyParamsDto,
     @Body() body: UpdateCatalogCompanyDto,
@@ -84,6 +127,8 @@ export class BusinessCatalogController {
 
   @Delete('documents/:document_id')
   @UseGuards(BusinessCsrfGuard)
+  @ApiSecurity({ businessSession: [], csrfToken: [] })
+  @ApiOperation({ summary: 'Delete a catalog document' })
   async deleteDocument(
     @Param() params: CatalogDocumentParamsDto,
     @Req() request: FastifyRequest,

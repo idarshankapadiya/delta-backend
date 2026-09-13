@@ -7,6 +7,12 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import {
+  ApiCookieAuth,
+  ApiOperation,
+  ApiSecurity,
+  ApiTags,
+} from '@nestjs/swagger';
 import type { FastifyRequest } from 'fastify';
 import { MessageService } from '../message/message.service';
 import { NoStoreInterceptor } from '../security/no-store.interceptor';
@@ -19,6 +25,7 @@ import { BusinessCsrfGuard } from './business-csrf.guard';
 @Controller('business/messages')
 @UseGuards(BusinessSiteOriginGuard, BusinessAuthGuard)
 @UseInterceptors(NoStoreInterceptor)
+@ApiTags('Business Messages')
 export class BusinessMessageController {
   constructor(
     private readonly messageService: MessageService,
@@ -26,6 +33,8 @@ export class BusinessMessageController {
   ) {}
 
   @Get()
+  @ApiCookieAuth('businessSession')
+  @ApiOperation({ summary: 'List contact messages' })
   async getMessages(@Req() request: FastifyRequest) {
     const response = await this.messageService.getMessages();
     const session = (request as BusinessAuthRequest).businessSession;
@@ -41,6 +50,8 @@ export class BusinessMessageController {
 
   @Delete(':message_id')
   @UseGuards(BusinessCsrfGuard)
+  @ApiSecurity({ businessSession: [], csrfToken: [] })
+  @ApiOperation({ summary: 'Delete a contact message' })
   async deleteMessage(
     @Param('message_id') messageId: string,
     @Req() request: FastifyRequest,

@@ -11,6 +11,14 @@ import {
   UseInterceptors,
   UnauthorizedException,
 } from '@nestjs/common';
+import {
+  ApiBody,
+  ApiConsumes,
+  ApiCookieAuth,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { CatalogAccessService } from './catalog-access.service';
 import { CatalogService } from './catalog.service';
@@ -28,6 +36,7 @@ import { catalogAccessCookieName } from './catalog-access.guard';
 import { NoStoreInterceptor } from '../security/no-store.interceptor';
 
 @Controller('catalog')
+@ApiTags('Catalog')
 export class CatalogController {
   constructor(
     private readonly catalogService: CatalogService,
@@ -36,17 +45,20 @@ export class CatalogController {
   ) {}
 
   @Get('all')
+  @ApiOperation({ summary: 'Get public catalog navigation' })
   getCatalogAll() {
     return this.catalogService.getCatalogAll();
   }
 
   @Post('library')
+  @ApiOperation({ summary: 'Get selected company catalog libraries' })
   @UseGuards(PublicSiteOriginGuard)
   getCatalogLibrary(@Body() body: CatalogLibraryDto) {
     return this.catalogService.getCatalogLibrary(body.company_slugs);
   }
 
   @Post('access')
+  @ApiOperation({ summary: 'Record a catalog access inquiry' })
   @UseGuards(PublicSiteOriginGuard)
   createAccess(@Body() body: CatalogAccessDto, @Req() request: FastifyRequest) {
     const ip = this.getClientIp(request);
@@ -64,6 +76,7 @@ export class CatalogController {
   }
 
   @Post('access/google')
+  @ApiOperation({ summary: 'Create catalog access with Google' })
   @UseGuards(PublicSiteOriginGuard)
   @UseInterceptors(NoStoreInterceptor)
   async createGoogleAccess(
@@ -102,6 +115,13 @@ export class CatalogController {
   }
 
   @Post('access/google/redirect')
+  @ApiOperation({ summary: 'Handle Google catalog access redirect' })
+  @ApiConsumes('application/x-www-form-urlencoded')
+  @ApiBody({ type: CatalogGoogleRedirectDto })
+  @ApiResponse({
+    status: 303,
+    description: 'Redirect to the frontend home page.',
+  })
   @UseInterceptors(NoStoreInterceptor)
   async createGoogleRedirectAccess(
     @Body() body: CatalogGoogleRedirectDto,
@@ -135,6 +155,8 @@ export class CatalogController {
   }
 
   @Get('access/me')
+  @ApiCookieAuth('catalogAccess')
+  @ApiOperation({ summary: 'Get the current catalog access session' })
   @UseGuards(PublicSiteOriginGuard)
   @UseInterceptors(NoStoreInterceptor)
   getAccessMe(@Req() request: FastifyRequest) {
@@ -161,6 +183,7 @@ export class CatalogController {
   }
 
   @Post('access/request-otp')
+  @ApiOperation({ summary: 'Request a catalog access OTP' })
   @UseGuards(PublicSiteOriginGuard)
   @UseInterceptors(NoStoreInterceptor)
   async requestAccessOtp(
@@ -198,6 +221,7 @@ export class CatalogController {
   }
 
   @Post('access/verify-otp')
+  @ApiOperation({ summary: 'Verify a catalog access OTP' })
   @UseGuards(PublicSiteOriginGuard)
   @UseInterceptors(NoStoreInterceptor)
   verifyAccessOtp(
@@ -229,6 +253,7 @@ export class CatalogController {
   }
 
   @Post('documents/access')
+  @ApiOperation({ summary: 'Create a signed catalog document URL' })
   @UseGuards(PublicSiteOriginGuard)
   @UseInterceptors(NoStoreInterceptor)
   async createDocumentAccess(
@@ -269,6 +294,8 @@ export class CatalogController {
   }
 
   @Post('access/logout')
+  @ApiCookieAuth('catalogAccess')
+  @ApiOperation({ summary: 'Log out of catalog access' })
   @UseGuards(PublicSiteOriginGuard)
   @UseInterceptors(NoStoreInterceptor)
   logoutAccess(

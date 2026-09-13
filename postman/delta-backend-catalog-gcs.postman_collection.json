@@ -228,6 +228,7 @@
                   "  });",
                   "",
                   "  pm.expect(endpointKeys).to.include('GET /api/health');",
+                  "  pm.expect(endpointKeys).to.include('GET /api/docs');",
                   "  pm.expect(endpointKeys).to.include('POST /api/message');",
                   "  pm.expect(endpointKeys).to.include('GET /api/business/messages');",
                   "  pm.expect(endpointKeys).to.include('GET /api/business/catalog/all');",
@@ -244,6 +245,73 @@
           "request": {
             "method": "GET",
             "url": "{{base_url}}/api"
+          }
+        },
+        {
+          "name": "Swagger UI",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Swagger UI returns HTML', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.headers.get('Content-Type')).to.include('text/html');",
+                  "  pm.expect(pm.response.text()).to.include('Swagger UI');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/docs"
+          }
+        },
+        {
+          "name": "OpenAPI JSON",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('OpenAPI JSON returns the API definition', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.openapi).to.eql('3.0.0');",
+                  "  pm.expect(Object.keys(json.paths)).to.not.be.empty;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/docs/openapi.json"
+          }
+        },
+        {
+          "name": "OpenAPI YAML",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('OpenAPI YAML returns the API definition', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.headers.get('Content-Type')).to.include('text/yaml');",
+                  "  pm.expect(pm.response.text()).to.include('openapi: 3.0.0');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/docs/openapi.yaml"
           }
         }
       ]
@@ -2283,8 +2351,32 @@
             },
             {
               "name": "Add New Product",
-              "description": "Creates a new product that appears in the public product API when active. Before sending again, use a unique admin_new_product_id and change the product fields as needed. companyId and categoryId must reference existing records.",
+              "description": "Creates a new product that appears in the public product API when active. productId is generated from name by converting it to lowercase and replacing spaces or special-character groups with a hyphen. Set isNewCompany to true and provide companyName when the company does not exist; otherwise set it to false and provide companyId. Use isNewCategory, categoryName, and categoryId in the same way for the category.",
               "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "function slugifyName(value) {",
+                      "  return String(value || '')",
+                      "    .normalize('NFKD')",
+                      "    .replace(/[\\u0300-\\u036f]/g, '')",
+                      "    .trim()",
+                      "    .toLowerCase()",
+                      "    .replace(/[^a-z0-9]+/g, '-')",
+                      "    .replace(/^-+|-+$/g, '')",
+                      "    .slice(0, 128)",
+                      "    .replace(/-+$/g, '');",
+                      "}",
+                      "",
+                      "const input = JSON.parse(pm.variables.replaceIn(pm.request.body.raw));",
+                      "const productId = slugifyName(input.name);",
+                      "if (!productId) throw new Error('Product name must contain at least one letter or number');",
+                      "pm.collectionVariables.set('admin_new_product_id', productId);"
+                    ]
+                  }
+                },
                 {
                   "listen": "test",
                   "script": {
@@ -2323,7 +2415,7 @@
                 "url": "{{base_url}}/api/business/products",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"productId\": \"{{admin_new_product_id}}\",\n  \"name\": \"Postman Product Fully Updated\",\n  \"sku\": \"PM-OOS-UPDATED\",\n  \"modelNumber\": \"PM-MODEL-UPDATED\",\n  \"companyId\": \"{{admin_product_company_id}}\",\n  \"categoryId\": \"{{admin_product_category_id}}\",\n  \"price\": 1499.5,\n  \"currency\": \"INR\",\n  \"discountPercentage\": 12.5,\n  \"inStock\": false,\n  \"stockQuantity\": 0,\n  \"active\": true,\n  \"shortDescription\": \"Updated short product description.\",\n  \"description\": \"Updated name, price, discount, inventory, descriptions, and all product specifications.\",\n  \"specifications\": {\n    \"voltage\": \"415 V\",\n    \"poles\": 4,\n    \"ratedCurrent\": \"32 A\",\n    \"certified\": true,\n    \"warrantyYears\": 2\n  }\n}",
+                  "raw": "{\n  \"productId\": \"{{admin_new_product_id}}\",\n  \"name\": \"Postman Product Fully Updated\",\n  \"sku\": \"PM-OOS-UPDATED\",\n  \"modelNumber\": \"PM-MODEL-UPDATED\",\n  \"isNewCompany\": false,\n  \"companyName\": \"\",\n  \"companyId\": \"{{admin_product_company_id}}\",\n  \"isNewCategory\": false,\n  \"categoryName\": \"\",\n  \"categoryId\": \"{{admin_product_category_id}}\",\n  \"price\": 1499.5,\n  \"currency\": \"INR\",\n  \"discountPercentage\": 12.5,\n  \"inStock\": false,\n  \"stockQuantity\": 0,\n  \"active\": true,\n  \"shortDescription\": \"Updated short product description.\",\n  \"description\": \"Updated name, price, discount, inventory, descriptions, and all product specifications.\",\n  \"specifications\": {\n    \"voltage\": \"415 V\",\n    \"poles\": 4,\n    \"ratedCurrent\": \"32 A\",\n    \"certified\": true,\n    \"warrantyYears\": 2\n  }\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -2879,6 +2971,303 @@
                   }
                 ],
                 "url": "{{base_url}}/api/business/companies/{{admin_product_company_id}}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "OpenAPI Generated Coverage",
+      "description": "Requests generated only for OpenAPI operations that are not represented in the hand-maintained folders. Run npm run api:artifacts after route changes.",
+      "item": [
+        {
+          "name": "Business Authentication",
+          "item": [
+            {
+              "name": "Get the current business session",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/auth/me",
+                "description": "Generated from OpenAPI operation BusinessAuth_getCurrentUser. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "Log out of the business session",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/auth/logout",
+                "description": "Generated from OpenAPI operation BusinessAuth_logout. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            }
+          ]
+        },
+        {
+          "name": "Business Catalog",
+          "item": [
+            {
+              "name": "Get catalog data for business administration",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/catalog/all",
+                "description": "Generated from OpenAPI operation BusinessCatalog_getCatalogAll. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "Upload a catalog PDF document",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/catalog/documents",
+                "description": "Generated from OpenAPI operation BusinessCatalog_createDocument. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "company_name",
+                      "value": "<company_name>",
+                      "type": "text"
+                    },
+                    {
+                      "key": "category_name",
+                      "value": "<category_name>",
+                      "type": "text",
+                      "disabled": true
+                    },
+                    {
+                      "key": "document_name",
+                      "value": "<document_name>",
+                      "type": "text"
+                    },
+                    {
+                      "key": "file",
+                      "type": "file",
+                      "src": []
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Create an administrative signed document URL",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/catalog/documents/access",
+                "description": "Generated from OpenAPI operation BusinessCatalog_createDocumentAccess. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"company_slug\": \"<company_slug>\",\n  \"category_slug\": \"<category_slug>\",\n  \"document_slug\": \"<document_slug>\",\n  \"action\": \"preview\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Update or replace a catalog PDF document",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/catalog/documents/{{document_id}}",
+                "description": "Generated from OpenAPI operation BusinessCatalog_updateDocument. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "document_name",
+                      "value": "<document_name>",
+                      "type": "text",
+                      "disabled": true
+                    },
+                    {
+                      "key": "category_name",
+                      "value": "<category_name>",
+                      "type": "text",
+                      "disabled": true
+                    },
+                    {
+                      "key": "file",
+                      "type": "file",
+                      "src": [],
+                      "disabled": true
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Delete a catalog document",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/catalog/documents/{{document_id}}",
+                "description": "Generated from OpenAPI operation BusinessCatalog_deleteDocument. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "Rename or merge a catalog company",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/catalog/companies/{{company_slug}}",
+                "description": "Generated from OpenAPI operation BusinessCatalog_updateCompany. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"company_name\": \"<company_name>\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Business Messages",
+          "item": [
+            {
+              "name": "List contact messages",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/messages",
+                "description": "Generated from OpenAPI operation BusinessMessage_getMessages. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "Delete a contact message",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/messages/{{message_id}}",
+                "description": "Generated from OpenAPI operation BusinessMessage_deleteMessage. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            }
+          ]
+        },
+        {
+          "name": "Catalog",
+          "item": [
+            {
+              "name": "Handle Google catalog access redirect",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/catalog/access/google/redirect",
+                "description": "Generated from OpenAPI operation Catalog_createGoogleRedirectAccess. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "Log out of catalog access",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/catalog/access/logout",
+                "description": "Generated from OpenAPI operation Catalog_logoutAccess. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
               }
             }
           ]

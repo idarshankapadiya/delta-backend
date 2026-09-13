@@ -28,6 +28,11 @@ import {
 } from './dto/product-mutation.dto';
 
 type FirestoreRecord = Record<string, unknown>;
+type ResolvedCreateProductInput = CreateProductDto & {
+  productId: string;
+  companyId: string;
+  categoryId: string;
+};
 
 @Injectable()
 export class ProductMutationService {
@@ -247,19 +252,79 @@ export class ProductMutationService {
   }
 
   async createProduct(input: CreateProductDto) {
-    const relationships = await this.getProductRelationships(
-      input.companyId,
-      input.categoryId,
-    );
-    const product = this.createProductRecord(input, relationships);
+    const productId = this.resourceIdFromName(input.name, 'Product');
+    const companyId = input.isNewCompany
+      ? this.resourceIdFromName(input.companyName, 'Company')
+      : this.requiredResourceId(input.companyId, 'companyId');
+    const categoryId = input.isNewCategory
+      ? this.resourceIdFromName(input.categoryName, 'Category')
+      : this.requiredResourceId(input.categoryId, 'categoryId');
+    const firestore = this.getFirestore();
+    const productReference = firestore.collection('products').doc(productId);
+    const companyReference = firestore.collection('companies').doc(companyId);
+    const categoryReference = firestore
+      .collection('categories')
+      .doc(categoryId);
 
-    await this.createDocument(
-      this.getFirestore().collection('products').doc(input.productId),
-      product,
-      'Product already exists',
-    );
+    await firestore.runTransaction(async (transaction) => {
+      const [productSnapshot, companySnapshot, categorySnapshot] =
+        await Promise.all([
+          transaction.get(productReference),
+          transaction.get(companyReference),
+          transaction.get(categoryReference),
+        ]);
 
-    return { ok: true, productId: input.productId };
+      if (productSnapshot.exists) {
+        throw new ConflictException('Product already exists');
+      }
+
+      let company: FirestoreRecord;
+      if (input.isNewCompany) {
+        if (companySnapshot.exists) {
+          throw new ConflictException('Company already exists');
+        }
+        company = this.newCompanyRecord(companyId, input.companyName as string);
+        transaction.create(companyReference, company);
+      } else {
+        if (!companySnapshot.exists) {
+          throw new BadRequestException('Company does not exist');
+        }
+        company = companySnapshot.data() as FirestoreRecord;
+      }
+
+      let category: FirestoreRecord;
+      if (input.isNewCategory) {
+        if (categorySnapshot.exists) {
+          throw new ConflictException('Category already exists');
+        }
+        category = this.newCategoryRecord(
+          categoryId,
+          input.categoryName as string,
+          companyId,
+        );
+        transaction.create(categoryReference, category);
+      } else {
+        if (!categorySnapshot.exists) {
+          throw new BadRequestException('Category does not exist');
+        }
+        category = categorySnapshot.data() as FirestoreRecord;
+        this.assertCategoryCompany(category, companyId);
+      }
+
+      const productInput: ResolvedCreateProductInput = {
+        ...input,
+        productId,
+        companyId,
+        categoryId,
+      };
+      const product = this.createProductRecord(productInput, {
+        company,
+        category,
+      });
+      transaction.create(productReference, product);
+    });
+
+    return { ok: true, productId };
   }
 
   async updateProduct(productId: string, input: UpdateProductDto) {
@@ -323,8 +388,37 @@ export class ProductMutationService {
     return { ok: true, deletedProductId: productId, deletedAssets };
   }
 
+  private newCompanyRecord(id: string, name: string): FirestoreRecord {
+    return {
+      id,
+      name: name.trim(),
+      slug: id,
+      active: true,
+      sortOrder: 0,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+  }
+
+  private newCategoryRecord(
+    id: string,
+    name: string,
+    companyId: string,
+  ): FirestoreRecord {
+    return {
+      id,
+      name: name.trim(),
+      slug: id,
+      companyIds: [companyId],
+      active: true,
+      sortOrder: 0,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+  }
+
   private createProductRecord(
-    input: CreateProductDto,
+    input: ResolvedCreateProductInput,
     relationships: {
       company: FirestoreRecord;
       category: FirestoreRecord;
@@ -497,19 +591,23 @@ export class ProductMutationService {
       throw new BadRequestException('Category does not exist');
 
     const categoryData = category.data() as FirestoreRecord;
-    const companyIds = Array.isArray(categoryData.companyIds)
-      ? categoryData.companyIds
+    this.assertCategoryCompany(categoryData, companyId);
+
+    return {
+      company: company.data() as FirestoreRecord,
+      category: categoryData,
+    };
+  }
+
+  private assertCategoryCompany(category: FirestoreRecord, companyId: string) {
+    const companyIds = Array.isArray(category.companyIds)
+      ? category.companyIds
       : [];
     if (companyIds.length > 0 && !companyIds.includes(companyId)) {
       throw new BadRequestException(
         'Category is not associated with the selected company',
       );
     }
-
-    return {
-      company: company.data() as FirestoreRecord,
-      category: categoryData,
-    };
   }
 
   private async assertCompaniesExist(companyIds: string[]) {
@@ -736,6 +834,30 @@ export class ProductMutationService {
       .trim()
       .toLowerCase()
       .replace(/\s+/g, ' ');
+  }
+
+  private resourceIdFromName(value: string | undefined, label: string) {
+    const id = String(value || '')
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 128)
+      .replace(/-+$/g, '');
+    if (!id) {
+      throw new BadRequestException(
+        `${label} name must contain at least one letter or number`,
+      );
+    }
+    return id;
+  }
+
+  private requiredResourceId(value: string | undefined, field: string) {
+    const id = this.stringValue(value);
+    if (!id) throw new BadRequestException(`${field} is required`);
+    return id;
   }
 
   private optionalStringField(key: string, value?: string) {

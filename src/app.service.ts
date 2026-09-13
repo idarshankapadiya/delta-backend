@@ -34,6 +34,13 @@ export class AppService {
         },
         {
           method: 'GET',
+          path: '/api/docs',
+          description:
+            'Open Swagger UI. Raw definitions are available at /api/docs/openapi.json and /api/docs/openapi.yaml.',
+          auth: 'none',
+        },
+        {
+          method: 'GET',
           path: '/api/companies',
           description: 'Return active product companies.',
           auth: 'none',

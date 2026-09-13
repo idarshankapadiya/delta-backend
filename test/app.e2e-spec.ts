@@ -3,9 +3,11 @@ import {
   FastifyAdapter,
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
+import type { OpenAPIObject } from '@nestjs/swagger';
 import request from 'supertest';
 import { AppModule } from './../src/app.module';
 import type { ApiIndex } from './../src/app.service';
+import { setupSwagger } from './../src/openapi';
 
 describe('AppController (e2e)', () => {
   let app: NestFastifyApplication;
@@ -19,6 +21,7 @@ describe('AppController (e2e)', () => {
       new FastifyAdapter(),
     );
     app.setGlobalPrefix('api');
+    setupSwagger(app);
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
   });
@@ -63,6 +66,27 @@ describe('AppController (e2e)', () => {
           ]),
         );
       });
+  });
+
+  it('serves Swagger UI and raw OpenAPI definitions', async () => {
+    await request(app.getHttpServer())
+      .get('/api/docs')
+      .expect(200)
+      .expect('Content-Type', /text\/html/);
+
+    const jsonResponse = await request(app.getHttpServer())
+      .get('/api/docs/openapi.json')
+      .expect(200)
+      .expect('Content-Type', /application\/json/);
+    const document = jsonResponse.body as OpenAPIObject;
+    expect(document.openapi).toBe('3.0.0');
+    expect(Object.keys(document.paths)).toHaveLength(38);
+
+    await request(app.getHttpServer())
+      .get('/api/docs/openapi.yaml')
+      .expect(200)
+      .expect('Content-Type', /text\/yaml/)
+      .expect(/openapi: 3\.0\.0/);
   });
 
   it('registers every preserved public, business, and internal endpoint path', () => {

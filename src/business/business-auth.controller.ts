@@ -8,6 +8,12 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import {
+  ApiCookieAuth,
+  ApiOperation,
+  ApiSecurity,
+  ApiTags,
+} from '@nestjs/swagger';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { BusinessSiteOriginGuard } from '../security/origin.guards';
 import { NoStoreInterceptor } from '../security/no-store.interceptor';
@@ -28,10 +34,12 @@ import { BusinessGoogleAuthDto } from './dto/business-google-auth.dto';
 @Controller('business/auth')
 @UseGuards(BusinessSiteOriginGuard)
 @UseInterceptors(NoStoreInterceptor)
+@ApiTags('Business Authentication')
 export class BusinessAuthController {
   constructor(private readonly businessAuthService: BusinessAuthService) {}
 
   @Post('google')
+  @ApiOperation({ summary: 'Create a business session with Google' })
   async authenticateWithGoogle(
     @Body() body: BusinessGoogleAuthDto,
     @Req() request: FastifyRequest,
@@ -50,6 +58,8 @@ export class BusinessAuthController {
   }
 
   @Get('me')
+  @ApiCookieAuth('businessSession')
+  @ApiOperation({ summary: 'Get the current business session' })
   async getCurrentUser(
     @Req() request: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
@@ -68,6 +78,8 @@ export class BusinessAuthController {
 
   @Post('logout')
   @UseGuards(BusinessAuthGuard, BusinessCsrfGuard)
+  @ApiSecurity({ businessSession: [], csrfToken: [] })
+  @ApiOperation({ summary: 'Log out of the business session' })
   async logout(
     @Req() request: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,

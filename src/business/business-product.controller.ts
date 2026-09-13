@@ -9,6 +9,7 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import { ApiOperation, ApiSecurity, ApiTags } from '@nestjs/swagger';
 import type { FastifyRequest } from 'fastify';
 import {
   CreateProductCategoryDto,
@@ -32,6 +33,8 @@ import { BusinessCsrfGuard } from './business-csrf.guard';
 @Controller('business')
 @UseGuards(BusinessSiteOriginGuard, BusinessAuthGuard, BusinessCsrfGuard)
 @UseInterceptors(NoStoreInterceptor)
+@ApiTags('Business Products')
+@ApiSecurity({ businessSession: [], csrfToken: [] })
 export class BusinessProductController {
   constructor(
     private readonly products: ProductMutationService,
@@ -39,6 +42,7 @@ export class BusinessProductController {
   ) {}
 
   @Post('companies')
+  @ApiOperation({ summary: 'Create a product company' })
   async createCompany(
     @Body() body: CreateProductCompanyDto,
     @Req() request: FastifyRequest,
@@ -49,6 +53,7 @@ export class BusinessProductController {
   }
 
   @Put('companies/:companyId')
+  @ApiOperation({ summary: 'Update a product company' })
   async updateCompany(
     @Param() params: ProductCompanyParamsDto,
     @Body() body: UpdateProductCompanyDto,
@@ -60,6 +65,7 @@ export class BusinessProductController {
   }
 
   @Delete('companies/:companyId')
+  @ApiOperation({ summary: 'Delete an unused product company' })
   async deleteCompany(
     @Param() params: ProductCompanyParamsDto,
     @Req() request: FastifyRequest,
@@ -70,6 +76,7 @@ export class BusinessProductController {
   }
 
   @Post('categories')
+  @ApiOperation({ summary: 'Create a product category' })
   async createCategory(
     @Body() body: CreateProductCategoryDto,
     @Req() request: FastifyRequest,
@@ -80,6 +87,7 @@ export class BusinessProductController {
   }
 
   @Put('categories/:categoryId')
+  @ApiOperation({ summary: 'Update a product category' })
   async updateCategory(
     @Param() params: ProductCategoryParamsDto,
     @Body() body: UpdateProductCategoryDto,
@@ -91,6 +99,7 @@ export class BusinessProductController {
   }
 
   @Delete('categories/:categoryId')
+  @ApiOperation({ summary: 'Delete an unused product category' })
   async deleteCategory(
     @Param() params: ProductCategoryParamsDto,
     @Req() request: FastifyRequest,
@@ -101,6 +110,9 @@ export class BusinessProductController {
   }
 
   @Post('products')
+  @ApiOperation({
+    summary: 'Create a product and optionally its company or category',
+  })
   async createProduct(
     @Body() body: CreateProductDto,
     @Req() request: FastifyRequest,
@@ -111,6 +123,7 @@ export class BusinessProductController {
   }
 
   @Put('products/:productId')
+  @ApiOperation({ summary: 'Update a product' })
   async updateProduct(
     @Param() params: ProductResourceParamsDto,
     @Body() body: UpdateProductDto,
@@ -122,6 +135,7 @@ export class BusinessProductController {
   }
 
   @Delete('products/out-of-stock/:productId')
+  @ApiOperation({ summary: 'Delete a product only when it is out of stock' })
   async deleteOutOfStockProduct(
     @Param() params: ProductResourceParamsDto,
     @Req() request: FastifyRequest,
@@ -134,6 +148,7 @@ export class BusinessProductController {
   }
 
   @Delete('products/:productId')
+  @ApiOperation({ summary: 'Delete a product' })
   async deleteProduct(
     @Param() params: ProductResourceParamsDto,
     @Req() request: FastifyRequest,
