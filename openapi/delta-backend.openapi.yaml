@@ -371,6 +371,48 @@ paths:
       summary: Create a product and optionally its company or category
       tags:
         - Business Products
+  /api/business/products/upload:
+    post:
+      operationId: BusinessProduct_createProductUpload
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - product
+                - main_image
+              properties:
+                product:
+                  type: string
+                  description: JSON-encoded CreateProductDto payload.
+                main_image:
+                  type: string
+                  format: binary
+                  description: Required JPEG, PNG, WebP, or AVIF main image. A WebP thumbnail is
+                    generated automatically.
+                additional_images:
+                  type: array
+                  maxItems: 20
+                  items:
+                    type: string
+                    format: binary
+                  description: Optional replacement additional product images.
+                brochure:
+                  type: string
+                  format: binary
+                  description: Optional PDF brochure.
+      responses:
+        "201":
+          description: ""
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Create a product and upload its assets
+      tags:
+        - Business Products
   /api/business/products/{productId}:
     put:
       operationId: BusinessProduct_updateProduct
@@ -396,6 +438,8 @@ paths:
       tags:
         - Business Products
     delete:
+      description: Deletes the product. Its company and category are also deleted when
+        no other products reference them.
       operationId: BusinessProduct_deleteProduct
       parameters:
         - name: productId
@@ -405,15 +449,93 @@ paths:
             type: string
       responses:
         "200":
+          description: The product was deleted. Nullable relationship IDs identify any
+            company or category that was also deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - deletedProductId
+                  - deletedAssets
+                  - deletedCompanyId
+                  - deletedCategoryId
+                  - updatedCategories
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  deletedProductId:
+                    type: string
+                  deletedAssets:
+                    type: integer
+                    minimum: 0
+                  deletedCompanyId:
+                    type: string
+                    nullable: true
+                  deletedCategoryId:
+                    type: string
+                    nullable: true
+                  updatedCategories:
+                    type: integer
+                    minimum: 0
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Delete a product and unused relationships
+      tags:
+        - Business Products
+  /api/business/products/{productId}/upload:
+    put:
+      operationId: BusinessProduct_updateProductUpload
+      parameters:
+        - name: productId
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - product
+              properties:
+                product:
+                  type: string
+                  description: JSON-encoded UpdateProductDto payload.
+                main_image:
+                  type: string
+                  format: binary
+                  description: Optional replacement main image. A replacement WebP thumbnail is
+                    generated automatically.
+                additional_images:
+                  type: array
+                  maxItems: 20
+                  items:
+                    type: string
+                    format: binary
+                  description: Optional replacement additional product images.
+                brochure:
+                  type: string
+                  format: binary
+                  description: Optional PDF brochure.
+      responses:
+        "200":
           description: ""
       security:
         - businessSession: []
           csrfToken: []
-      summary: Delete a product
+      summary: Update a product and upload replacement assets
       tags:
         - Business Products
   /api/business/products/out-of-stock/{productId}:
     delete:
+      description: Deletes the product only when it is out of stock. Its company and
+        category are also deleted when no other products reference them.
       operationId: BusinessProduct_deleteOutOfStockProduct
       parameters:
         - name: productId
@@ -423,11 +545,41 @@ paths:
             type: string
       responses:
         "200":
-          description: ""
+          description: The product was deleted. Nullable relationship IDs identify any
+            company or category that was also deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - deletedProductId
+                  - deletedAssets
+                  - deletedCompanyId
+                  - deletedCategoryId
+                  - updatedCategories
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  deletedProductId:
+                    type: string
+                  deletedAssets:
+                    type: integer
+                    minimum: 0
+                  deletedCompanyId:
+                    type: string
+                    nullable: true
+                  deletedCategoryId:
+                    type: string
+                    nullable: true
+                  updatedCategories:
+                    type: integer
+                    minimum: 0
       security:
         - businessSession: []
           csrfToken: []
-      summary: Delete a product only when it is out of stock
+      summary: Delete an out-of-stock product and unused relationships
       tags:
         - Business Products
   /api/catalog/all:

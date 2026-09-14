@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  InternalServerErrorException,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
@@ -14,9 +15,11 @@ import {
   QueryDocumentSnapshot,
 } from '@google-cloud/firestore';
 import { Storage } from '@google-cloud/storage';
+import { ulid } from 'ulid';
 import {
   getProductBucketName,
   getProductFirestoreDatabaseId,
+  getProductThumbnailBucketName,
 } from '../config/product.config';
 import {
   CreateProductCategoryDto,
@@ -26,6 +29,12 @@ import {
   UpdateProductCompanyDto,
   UpdateProductDto,
 } from './dto/product-mutation.dto';
+import type {
+  ProductAssetReference,
+  ProductUploadFile,
+  ProductUploadFiles,
+  UploadedProductAssets,
+} from './product-upload.types';
 
 type FirestoreRecord = Record<string, unknown>;
 type ResolvedCreateProductInput = CreateProductDto & {
@@ -251,7 +260,7 @@ export class ProductMutationService {
     return { ok: true, deletedCategoryId: categoryId };
   }
 
-  async createProduct(input: CreateProductDto) {
+  async createProduct(input: CreateProductDto, files?: ProductUploadFiles) {
     const productId = this.resourceIdFromName(input.name, 'Product');
     const companyId = input.isNewCompany
       ? this.resourceIdFromName(input.companyName, 'Company')
@@ -266,69 +275,91 @@ export class ProductMutationService {
       .collection('categories')
       .doc(categoryId);
 
-    await firestore.runTransaction(async (transaction) => {
-      const [productSnapshot, companySnapshot, categorySnapshot] =
-        await Promise.all([
-          transaction.get(productReference),
-          transaction.get(companyReference),
-          transaction.get(categoryReference),
-        ]);
+    const uploadedAssets = this.hasProductUploadFiles(files)
+      ? await this.uploadProductAssets(productId, companyId, files)
+      : undefined;
 
-      if (productSnapshot.exists) {
-        throw new ConflictException('Product already exists');
-      }
+    try {
+      await firestore.runTransaction(async (transaction) => {
+        const [productSnapshot, companySnapshot, categorySnapshot] =
+          await Promise.all([
+            transaction.get(productReference),
+            transaction.get(companyReference),
+            transaction.get(categoryReference),
+          ]);
 
-      let company: FirestoreRecord;
-      if (input.isNewCompany) {
-        if (companySnapshot.exists) {
-          throw new ConflictException('Company already exists');
+        if (productSnapshot.exists) {
+          throw new ConflictException('Product already exists');
         }
-        company = this.newCompanyRecord(companyId, input.companyName as string);
-        transaction.create(companyReference, company);
-      } else {
-        if (!companySnapshot.exists) {
-          throw new BadRequestException('Company does not exist');
-        }
-        company = companySnapshot.data() as FirestoreRecord;
-      }
 
-      let category: FirestoreRecord;
-      if (input.isNewCategory) {
-        if (categorySnapshot.exists) {
-          throw new ConflictException('Category already exists');
+        let company: FirestoreRecord;
+        if (input.isNewCompany) {
+          if (companySnapshot.exists) {
+            throw new ConflictException('Company already exists');
+          }
+          company = this.newCompanyRecord(
+            companyId,
+            input.companyName as string,
+          );
+          transaction.create(companyReference, company);
+        } else {
+          if (!companySnapshot.exists) {
+            throw new BadRequestException('Company does not exist');
+          }
+          company = companySnapshot.data() as FirestoreRecord;
         }
-        category = this.newCategoryRecord(
-          categoryId,
-          input.categoryName as string,
+
+        let category: FirestoreRecord;
+        if (input.isNewCategory) {
+          if (categorySnapshot.exists) {
+            throw new ConflictException('Category already exists');
+          }
+          category = this.newCategoryRecord(
+            categoryId,
+            input.categoryName as string,
+            companyId,
+          );
+          transaction.create(categoryReference, category);
+        } else {
+          if (!categorySnapshot.exists) {
+            throw new BadRequestException('Category does not exist');
+          }
+          category = categorySnapshot.data() as FirestoreRecord;
+          this.assertCategoryCompany(category, companyId);
+        }
+
+        const productInput: ResolvedCreateProductInput = {
+          ...input,
+          productId,
           companyId,
+          categoryId,
+        };
+        const product = this.createProductRecord(
+          productInput,
+          {
+            company,
+            category,
+          },
+          uploadedAssets,
         );
-        transaction.create(categoryReference, category);
-      } else {
-        if (!categorySnapshot.exists) {
-          throw new BadRequestException('Category does not exist');
-        }
-        category = categorySnapshot.data() as FirestoreRecord;
-        this.assertCategoryCompany(category, companyId);
-      }
-
-      const productInput: ResolvedCreateProductInput = {
-        ...input,
-        productId,
-        companyId,
-        categoryId,
-      };
-      const product = this.createProductRecord(productInput, {
-        company,
-        category,
+        transaction.create(productReference, product);
       });
-      transaction.create(productReference, product);
-    });
+    } catch (error) {
+      await this.deleteUploadedAssets(uploadedAssets);
+      throw error;
+    }
 
     return { ok: true, productId };
   }
 
-  async updateProduct(productId: string, input: UpdateProductDto) {
-    this.assertUpdateProvided(input);
+  async updateProduct(
+    productId: string,
+    input: UpdateProductDto,
+    files?: ProductUploadFiles,
+  ) {
+    if (Object.keys(input).length === 0 && !this.hasProductUploadFiles(files)) {
+      throw new BadRequestException('At least one update field is required');
+    }
     const reference = this.getFirestore().collection('products').doc(productId);
     const snapshot = await reference.get();
 
@@ -343,15 +374,33 @@ export class ProductMutationService {
       companyId,
       categoryId,
     );
+    const uploadedAssets = this.hasProductUploadFiles(files)
+      ? await this.uploadProductAssets(productId, companyId, files)
+      : undefined;
     const update = this.createProductUpdate(
       productId,
       input,
       current,
       relationships,
     );
+    Object.assign(update, this.uploadedAssetFields(uploadedAssets));
 
-    await reference.update(update);
-    return { ok: true, productId, updatedFields: Object.keys(input) };
+    try {
+      await reference.update(update);
+    } catch (error) {
+      await this.deleteUploadedAssets(uploadedAssets);
+      throw error;
+    }
+
+    await this.deleteReplacedAssets(productId, current, uploadedAssets);
+    return {
+      ok: true,
+      productId,
+      updatedFields: [
+        ...Object.keys(input),
+        ...this.uploadedAssetFieldNames(uploadedAssets),
+      ],
+    };
   }
 
   deleteProduct(productId: string) {
@@ -368,7 +417,7 @@ export class ProductMutationService {
   ) {
     const firestore = this.getFirestore();
     const reference = firestore.collection('products').doc(productId);
-    const productData = await firestore.runTransaction(async (transaction) => {
+    const deletion = await firestore.runTransaction(async (transaction) => {
       const snapshot = await transaction.get(reference);
       if (!snapshot.exists) throw new NotFoundException('Product not found');
 
@@ -377,15 +426,91 @@ export class ProductMutationService {
         throw new ConflictException('Product is not out of stock');
       }
 
+      const companyId = this.stringValue(data.companyId);
+      const categoryId = this.stringValue(data.categoryId);
+      const companyReference = companyId
+        ? firestore.collection('companies').doc(companyId)
+        : undefined;
+      const categoryReference = categoryId
+        ? firestore.collection('categories').doc(categoryId)
+        : undefined;
+      const [companyProducts, categoryProducts, company, category] =
+        await Promise.all([
+          companyId
+            ? transaction.get(
+                firestore
+                  .collection('products')
+                  .where('companyId', '==', companyId)
+                  .limit(2),
+              )
+            : undefined,
+          categoryId
+            ? transaction.get(
+                firestore
+                  .collection('products')
+                  .where('categoryId', '==', categoryId)
+                  .limit(2),
+              )
+            : undefined,
+          companyReference ? transaction.get(companyReference) : undefined,
+          categoryReference ? transaction.get(categoryReference) : undefined,
+        ]);
+      const deleteCompany = Boolean(
+        companyReference &&
+        company?.exists &&
+        companyProducts?.docs.every((document) => document.id === productId),
+      );
+      const deleteCategory = Boolean(
+        categoryReference &&
+        category?.exists &&
+        categoryProducts?.docs.every((document) => document.id === productId),
+      );
+      const linkedCategories = deleteCompany
+        ? await transaction.get(
+            firestore
+              .collection('categories')
+              .where('companyIds', 'array-contains', companyId),
+          )
+        : undefined;
+
       transaction.delete(reference);
-      return data;
+      if (deleteCompany && companyReference) {
+        transaction.delete(companyReference);
+      }
+      if (deleteCategory && categoryReference) {
+        transaction.delete(categoryReference);
+      }
+
+      let updatedCategories = 0;
+      linkedCategories?.docs.forEach((document) => {
+        if (deleteCategory && document.id === categoryId) return;
+        transaction.update(document.ref, {
+          companyIds: FieldValue.arrayRemove(companyId),
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        updatedCategories += 1;
+      });
+
+      return {
+        data,
+        deletedCompanyId: deleteCompany ? companyId : null,
+        deletedCategoryId: deleteCategory ? categoryId : null,
+        updatedCategories,
+      };
     });
 
     const deletedAssets = await this.deleteProductAssets(
       productId,
-      productData,
+      deletion.data,
     );
-    return { ok: true, deletedProductId: productId, deletedAssets };
+    return {
+      ok: true,
+      deletedProductId: productId,
+      deletedAssets,
+      deletedCompanyId: deletion.deletedCompanyId,
+      deletedCategoryId: deletion.deletedCategoryId,
+      updatedCategories: deletion.updatedCategories,
+    };
   }
 
   private newCompanyRecord(id: string, name: string): FirestoreRecord {
@@ -423,6 +548,7 @@ export class ProductMutationService {
       company: FirestoreRecord;
       category: FirestoreRecord;
     },
+    uploadedAssets?: UploadedProductAssets,
   ): FirestoreRecord {
     this.assertSpecifications(input.specifications);
     this.assertProductAssetPaths(input.productId, input.companyId, input);
@@ -462,6 +588,7 @@ export class ProductMutationService {
       description: input.description?.trim() || '',
       specifications: input.specifications ?? {},
       ...this.productAssetFields(input),
+      ...this.uploadedAssetFields(uploadedAssets),
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     };
@@ -575,6 +702,29 @@ export class ProductMutationService {
     );
   }
 
+  private uploadedAssetFields(assets?: UploadedProductAssets): FirestoreRecord {
+    if (!assets) return {};
+
+    return {
+      ...(assets.thumbnail ? { thumbnail: assets.thumbnail } : {}),
+      ...(assets.mainImage ? { mainImage: assets.mainImage } : {}),
+      ...(assets.brochure ? { brochure: assets.brochure } : {}),
+      ...(assets.additionalImages
+        ? { additionalImages: assets.additionalImages }
+        : {}),
+    };
+  }
+
+  private uploadedAssetFieldNames(assets?: UploadedProductAssets): string[] {
+    if (!assets) return [];
+    return [
+      ...(assets.thumbnail ? ['thumbnail'] : []),
+      ...(assets.mainImage ? ['mainImage'] : []),
+      ...(assets.additionalImages ? ['additionalImages'] : []),
+      ...(assets.brochure ? ['brochure'] : []),
+    ];
+  }
+
   private async getProductRelationships(companyId: string, categoryId: string) {
     if (!companyId || !categoryId) {
       throw new BadRequestException('companyId and categoryId are required');
@@ -664,32 +814,149 @@ export class ProductMutationService {
     return updated;
   }
 
-  private async deleteProductAssets(
+  private async uploadProductAssets(
     productId: string,
-    data: FirestoreRecord,
-  ): Promise<number> {
-    const companyId = this.stringValue(data.companyId);
-    const expectedPrefix = `products/${companyId}/${productId}/`;
-    const assets = [
-      data.thumbnail,
-      data.mainImage,
-      data.brochure,
-      ...(Array.isArray(data.additionalImages)
-        ? (data.additionalImages as unknown[])
+    companyId: string,
+    files: ProductUploadFiles,
+  ): Promise<UploadedProductAssets> {
+    const uploadId = ulid().toLowerCase();
+    const productPrefix = `products/${companyId}/${productId}`;
+    const thumbnailPrefix = `product-thumbnails/v1/${companyId}/${productId}`;
+    const destinations: Array<{
+      assign: (reference: ProductAssetReference) => void;
+      bucket: string;
+      file: ProductUploadFile;
+      path: string;
+    }> = [];
+    const assets: UploadedProductAssets = {};
+
+    if (files.thumbnail) {
+      destinations.push({
+        assign: (reference) => {
+          assets.thumbnail = reference;
+        },
+        bucket: getProductThumbnailBucketName(),
+        file: files.thumbnail,
+        path: `${thumbnailPrefix}/thumbnail-${uploadId}.webp`,
+      });
+    }
+    if (files.mainImage) {
+      destinations.push({
+        assign: (reference) => {
+          assets.mainImage = reference;
+        },
+        bucket: getProductBucketName(),
+        file: files.mainImage,
+        path: `${productPrefix}/main-${uploadId}.${files.mainImage.extension}`,
+      });
+    }
+    if (files.additionalImages?.length) {
+      const additionalImages: ProductAssetReference[] = [];
+      assets.additionalImages = additionalImages;
+      files.additionalImages.forEach((file, index) => {
+        destinations.push({
+          assign: (reference) => {
+            additionalImages.push(reference);
+          },
+          bucket: getProductBucketName(),
+          file,
+          path: `${productPrefix}/additional-${index + 1}-${uploadId}.${file.extension}`,
+        });
+      });
+    }
+    if (files.brochure) {
+      destinations.push({
+        assign: (reference) => {
+          assets.brochure = reference;
+        },
+        bucket: getProductBucketName(),
+        file: files.brochure,
+        path: `${productPrefix}/brochure-${uploadId}.pdf`,
+      });
+    }
+
+    const uploaded: ProductAssetReference[] = [];
+    try {
+      for (const destination of destinations) {
+        const reference = {
+          bucket: destination.bucket,
+          path: destination.path,
+        };
+        await this.getStorage()
+          .bucket(reference.bucket)
+          .file(reference.path)
+          .save(destination.file.buffer, {
+            resumable: false,
+            validation: 'crc32c',
+            metadata: {
+              cacheControl: 'public, max-age=31536000, immutable',
+              contentType: destination.file.contentType,
+              metadata: {
+                originalFileName: destination.file.filename,
+              },
+            },
+          });
+        uploaded.push(reference);
+        destination.assign(reference);
+      }
+    } catch (error) {
+      await this.deleteAssetReferences(uploaded);
+      throw new InternalServerErrorException(
+        'Unable to upload product assets',
+        {
+          cause: error,
+        },
+      );
+    }
+
+    return assets;
+  }
+
+  private async deleteReplacedAssets(
+    productId: string,
+    current: FirestoreRecord,
+    replacements?: UploadedProductAssets,
+  ): Promise<void> {
+    if (!replacements) return;
+
+    const companyId = this.stringValue(current.companyId);
+    const replaced = [
+      ...(replacements.thumbnail ? [current.thumbnail] : []),
+      ...(replacements.mainImage ? [current.mainImage] : []),
+      ...(replacements.brochure ? [current.brochure] : []),
+      ...(replacements.additionalImages &&
+      Array.isArray(current.additionalImages)
+        ? (current.additionalImages as unknown[])
         : []),
-    ];
-    const references = assets
+    ]
       .map((asset) => this.storedAssetReference(asset))
-      .filter((asset): asset is { bucket: string; path: string } =>
-        Boolean(
-          asset?.bucket === getProductBucketName() &&
-          asset.path.startsWith(expectedPrefix),
-        ),
+      .filter((asset): asset is ProductAssetReference =>
+        Boolean(asset && this.isOwnedProductAsset(asset, companyId, productId)),
       );
 
+    await this.deleteAssetReferences(replaced);
+  }
+
+  private async deleteUploadedAssets(
+    assets?: UploadedProductAssets,
+  ): Promise<void> {
+    if (!assets) return;
+    await this.deleteAssetReferences(
+      [
+        assets.thumbnail,
+        assets.mainImage,
+        assets.brochure,
+        ...(assets.additionalImages ?? []),
+      ].filter((asset): asset is ProductAssetReference => Boolean(asset)),
+    );
+  }
+
+  private async deleteAssetReferences(
+    assets: ProductAssetReference[],
+  ): Promise<number> {
     let deleted = 0;
     await Promise.all(
-      references.map(async (asset) => {
+      assets.map(async (asset) => {
         try {
           await this.getStorage()
             .bucket(asset.bucket)
@@ -705,6 +972,43 @@ export class ProductMutationService {
       }),
     );
     return deleted;
+  }
+
+  private async deleteProductAssets(
+    productId: string,
+    data: FirestoreRecord,
+  ): Promise<number> {
+    const companyId = this.stringValue(data.companyId);
+    const assets = [
+      data.thumbnail,
+      data.mainImage,
+      data.brochure,
+      ...(Array.isArray(data.additionalImages)
+        ? (data.additionalImages as unknown[])
+        : []),
+    ];
+    const references = assets
+      .map((asset) => this.storedAssetReference(asset))
+      .filter((asset): asset is ProductAssetReference =>
+        Boolean(asset && this.isOwnedProductAsset(asset, companyId, productId)),
+      );
+
+    return this.deleteAssetReferences(references);
+  }
+
+  private isOwnedProductAsset(
+    asset: ProductAssetReference,
+    companyId: string,
+    productId: string,
+  ): boolean {
+    const productPrefix = `products/${companyId}/${productId}/`;
+    const thumbnailPrefix = `product-thumbnails/v1/${companyId}/${productId}/`;
+    return (
+      (asset.bucket === getProductBucketName() &&
+        asset.path.startsWith(productPrefix)) ||
+      (asset.bucket === getProductThumbnailBucketName() &&
+        asset.path.startsWith(thumbnailPrefix))
+    );
   }
 
   private assertProductAssetPaths(
@@ -757,6 +1061,17 @@ export class ProductMutationService {
     if (Object.keys(input).length === 0) {
       throw new BadRequestException('At least one update field is required');
     }
+  }
+
+  private hasProductUploadFiles(
+    files?: ProductUploadFiles,
+  ): files is ProductUploadFiles {
+    return Boolean(
+      files?.thumbnail ||
+      files?.mainImage ||
+      files?.brochure ||
+      files?.additionalImages?.length,
+    );
   }
 
   private async createDocument(

@@ -2740,6 +2740,10 @@
                       "});",
                       "pm.test('deleted product id matches', function () {",
                       "  pm.expect(json.deletedProductId).to.eql(pm.collectionVariables.get('admin_out_of_stock_product_id'));",
+                      "});",
+                      "pm.test('relationships remain while other products exist', function () {",
+                      "  pm.expect(json.deletedCompanyId).to.eql(null);",
+                      "  pm.expect(json.deletedCategoryId).to.eql(null);",
                       "});"
                     ]
                   }
@@ -2828,6 +2832,10 @@
                       "});",
                       "pm.test('deleted product id matches', function () {",
                       "  pm.expect(json.deletedProductId).to.eql(pm.collectionVariables.get('admin_product_id'));",
+                      "});",
+                      "pm.test('relationships remain while another product exists', function () {",
+                      "  pm.expect(json.deletedCompanyId).to.eql(null);",
+                      "  pm.expect(json.deletedCategoryId).to.eql(null);",
                       "});"
                     ]
                   }
@@ -2867,6 +2875,10 @@
                       "const json = pm.response.json();",
                       "pm.test('deleted product id matches', function () {",
                       "  pm.expect(json.deletedProductId).to.eql(pm.collectionVariables.get('admin_new_product_id'));",
+                      "});",
+                      "pm.test('last product deletion removes empty relationships', function () {",
+                      "  pm.expect(json.deletedCompanyId).to.eql(pm.collectionVariables.get('admin_product_company_id'));",
+                      "  pm.expect(json.deletedCategoryId).to.eql(pm.collectionVariables.get('admin_product_category_id'));",
                       "});"
                     ]
                   }
@@ -2892,22 +2904,15 @@
               }
             },
             {
-              "name": "Delete Product Category",
+              "name": "Verify Product Category Was Auto-Deleted",
               "event": [
                 {
                   "listen": "test",
                   "script": {
                     "type": "text/javascript",
                     "exec": [
-                      "pm.test('empty category is deleted', function () {",
-                      "  pm.response.to.have.status(200);",
-                      "});",
-                      "const json = pm.response.json();",
-                      "pm.test('response confirms success', function () {",
-                      "  pm.expect(json.ok).to.eql(true);",
-                      "});",
-                      "pm.test('deleted category id matches', function () {",
-                      "  pm.expect(json.deletedCategoryId).to.eql(pm.collectionVariables.get('admin_product_category_id'));",
+                      "pm.test('empty category was already auto-deleted', function () {",
+                      "  pm.response.to.have.status(404);",
                       "});"
                     ]
                   }
@@ -2933,22 +2938,15 @@
               }
             },
             {
-              "name": "Delete Product Company",
+              "name": "Verify Product Company Was Auto-Deleted",
               "event": [
                 {
                   "listen": "test",
                   "script": {
                     "type": "text/javascript",
                     "exec": [
-                      "pm.test('empty company is deleted', function () {",
-                      "  pm.response.to.have.status(200);",
-                      "});",
-                      "const json = pm.response.json();",
-                      "pm.test('response confirms success', function () {",
-                      "  pm.expect(json.ok).to.eql(true);",
-                      "});",
-                      "pm.test('deleted company id matches', function () {",
-                      "  pm.expect(json.deletedCompanyId).to.eql(pm.collectionVariables.get('admin_product_company_id'));",
+                      "pm.test('empty company was already auto-deleted', function () {",
+                      "  pm.response.to.have.status(404);",
                       "});"
                     ]
                   }
@@ -3235,6 +3233,102 @@
                 ],
                 "url": "{{base_url}}/api/business/messages/{{message_id}}",
                 "description": "Generated from OpenAPI operation BusinessMessage_deleteMessage. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            }
+          ]
+        },
+        {
+          "name": "Business Products",
+          "item": [
+            {
+              "name": "Create a product and upload its assets",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/products/upload",
+                "description": "Generated from OpenAPI operation BusinessProduct_createProductUpload. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "product",
+                      "value": "<product>",
+                      "type": "text"
+                    },
+                    {
+                      "key": "main_image",
+                      "type": "file",
+                      "src": []
+                    },
+                    {
+                      "key": "additional_images",
+                      "value": "",
+                      "type": "text",
+                      "disabled": true
+                    },
+                    {
+                      "key": "brochure",
+                      "type": "file",
+                      "src": [],
+                      "disabled": true
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Update a product and upload replacement assets",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/products/{{productId}}/upload",
+                "description": "Generated from OpenAPI operation BusinessProduct_updateProductUpload. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "product",
+                      "value": "<product>",
+                      "type": "text"
+                    },
+                    {
+                      "key": "main_image",
+                      "type": "file",
+                      "src": [],
+                      "disabled": true
+                    },
+                    {
+                      "key": "additional_images",
+                      "value": "",
+                      "type": "text",
+                      "disabled": true
+                    },
+                    {
+                      "key": "brochure",
+                      "type": "file",
+                      "src": [],
+                      "disabled": true
+                    }
+                  ]
+                }
               }
             }
           ]

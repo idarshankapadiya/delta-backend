@@ -9,7 +9,14 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { ApiOperation, ApiSecurity, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBody,
+  ApiConsumes,
+  ApiOkResponse,
+  ApiOperation,
+  ApiSecurity,
+  ApiTags,
+} from '@nestjs/swagger';
 import type { FastifyRequest } from 'fastify';
 import {
   CreateProductCategoryDto,
@@ -23,6 +30,7 @@ import {
   UpdateProductDto,
 } from '../product/dto/product-mutation.dto';
 import { ProductMutationService } from '../product/product-mutation.service';
+import { ProductUploadService } from '../product/product-upload.service';
 import { NoStoreInterceptor } from '../security/no-store.interceptor';
 import { BusinessSiteOriginGuard } from '../security/origin.guards';
 import { SecurityAuditService } from '../security/security-audit.service';
@@ -38,6 +46,7 @@ import { BusinessCsrfGuard } from './business-csrf.guard';
 export class BusinessProductController {
   constructor(
     private readonly products: ProductMutationService,
+    private readonly productUploads: ProductUploadService,
     private readonly audit: SecurityAuditService,
   ) {}
 
@@ -122,6 +131,16 @@ export class BusinessProductController {
     return result;
   }
 
+  @Post('products/upload')
+  @ApiOperation({ summary: 'Create a product and upload its assets' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody(productUploadBody(true))
+  async createProductUpload(@Req() request: FastifyRequest) {
+    const result = await this.productUploads.createProduct(request);
+    this.auditMutation(request, 'product_create_with_assets');
+    return result;
+  }
+
   @Put('products/:productId')
   @ApiOperation({ summary: 'Update a product' })
   async updateProduct(
@@ -134,8 +153,29 @@ export class BusinessProductController {
     return result;
   }
 
+  @Put('products/:productId/upload')
+  @ApiOperation({ summary: 'Update a product and upload replacement assets' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody(productUploadBody(false))
+  async updateProductUpload(
+    @Param() params: ProductResourceParamsDto,
+    @Req() request: FastifyRequest,
+  ) {
+    const result = await this.productUploads.updateProduct(
+      params.productId,
+      request,
+    );
+    this.auditMutation(request, 'product_update_with_assets');
+    return result;
+  }
+
   @Delete('products/out-of-stock/:productId')
-  @ApiOperation({ summary: 'Delete a product only when it is out of stock' })
+  @ApiOperation({
+    summary: 'Delete an out-of-stock product and unused relationships',
+    description:
+      'Deletes the product only when it is out of stock. Its company and category are also deleted when no other products reference them.',
+  })
+  @ApiOkResponse(productDeletionResponse())
   async deleteOutOfStockProduct(
     @Param() params: ProductResourceParamsDto,
     @Req() request: FastifyRequest,
@@ -148,7 +188,12 @@ export class BusinessProductController {
   }
 
   @Delete('products/:productId')
-  @ApiOperation({ summary: 'Delete a product' })
+  @ApiOperation({
+    summary: 'Delete a product and unused relationships',
+    description:
+      'Deletes the product. Its company and category are also deleted when no other products reference them.',
+  })
+  @ApiOkResponse(productDeletionResponse())
   async deleteProduct(
     @Param() params: ProductResourceParamsDto,
     @Req() request: FastifyRequest,
@@ -168,4 +213,65 @@ export class BusinessProductController {
       subject: session?.subject,
     });
   }
+}
+
+function productDeletionResponse() {
+  return {
+    description:
+      'The product was deleted. Nullable relationship IDs identify any company or category that was also deleted.',
+    schema: {
+      type: 'object',
+      required: [
+        'ok',
+        'deletedProductId',
+        'deletedAssets',
+        'deletedCompanyId',
+        'deletedCategoryId',
+        'updatedCategories',
+      ],
+      properties: {
+        ok: { type: 'boolean', example: true },
+        deletedProductId: { type: 'string' },
+        deletedAssets: { type: 'integer', minimum: 0 },
+        deletedCompanyId: { type: 'string', nullable: true },
+        deletedCategoryId: { type: 'string', nullable: true },
+        updatedCategories: { type: 'integer', minimum: 0 },
+      },
+    },
+  };
+}
+
+function productUploadBody(create: boolean) {
+  return {
+    schema: {
+      type: 'object',
+      required: create ? ['product', 'main_image'] : ['product'],
+      properties: {
+        product: {
+          type: 'string',
+          description: create
+            ? 'JSON-encoded CreateProductDto payload.'
+            : 'JSON-encoded UpdateProductDto payload.',
+        },
+        main_image: {
+          type: 'string',
+          format: 'binary',
+          description: create
+            ? 'Required JPEG, PNG, WebP, or AVIF main image. A WebP thumbnail is generated automatically.'
+            : 'Optional replacement main image. A replacement WebP thumbnail is generated automatically.',
+        },
+        additional_images: {
+          type: 'array',
+          maxItems: 20,
+          items: { type: 'string', format: 'binary' },
+          description: 'Optional replacement additional product images.',
+        },
+        brochure: {
+          type: 'string',
+          format: 'binary',
+          description: 'Optional PDF brochure.',
+        },
+      },
+    },
+  };
 }

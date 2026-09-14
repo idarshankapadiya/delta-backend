@@ -12,8 +12,10 @@
 - The React product page calls the backend API, uses string product IDs, filters by company/category/stock, searches through the backend, and uses cursor pagination.
 - Authenticated business APIs create, update, and delete product companies, categories, and products. All mutations require the business session, approved origin, and CSRF token.
 - Product updates support name, SKU/model, company/category, price, currency, discount, inventory, descriptions, specifications, and GCS asset references.
+- Multipart product creation requires a main image; updates may provide a replacement. The backend generates a resized WebP thumbnail from every uploaded main image. Both endpoints also accept up to 20 additional images and an optional PDF brochure; the browser never supplies object paths.
+- Generated WebP thumbnails are stored under `product-thumbnails/v1/{companyId}/{productId}/` in `GCS_PRODUCT_THUMBNAIL_BUCKET`. Original main images, additional images, and brochures are stored under `products/{companyId}/{productId}/` in `GCS_PRODUCT_BUCKET`.
 - Company/category renames propagate their denormalized name and slug into existing product documents.
-- Product deletion also attempts to remove its own GCS assets. Company/category deletion returns `409 Conflict` while products still reference the resource, and the out-of-stock delete endpoint refuses in-stock products.
+- Product deletion also attempts to remove its own GCS assets and atomically deletes its company or category when no other products reference them. The response returns nullable `deletedCompanyId` and `deletedCategoryId` fields so clients can remove those resources immediately. Company/category deletion returns `409 Conflict` while products still reference the resource, and the out-of-stock delete endpoint refuses in-stock products.
 
 ## Firestore Document Requirements
 
@@ -24,7 +26,10 @@
 
 ## Required Runtime Configuration
 
-- `GCS_PRODUCT_BUCKET`: catalog asset bucket.
+- `GCS_PRODUCT_BUCKET`: product main image, additional image, and brochure bucket.
+- `GCS_PRODUCT_THUMBNAIL_BUCKET`: product thumbnail bucket. It falls back to `GCS_CATALOG_PUBLIC_ASSET_BUCKET` so product and catalog thumbnails can share `darshanent-thumbnail-dir` while keeping separate prefixes.
+- `PRODUCT_IMAGE_UPLOAD_MAX_BYTES`, `PRODUCT_BROCHURE_UPLOAD_MAX_BYTES`, and `PRODUCT_UPLOAD_TOTAL_MAX_BYTES`: optional upload limits; defaults are 20 MB per image, 100 MB per brochure, and 200 MB combined.
+- `PRODUCT_THUMBNAIL_WIDTH` and `PRODUCT_THUMBNAIL_QUALITY`: optional generated WebP settings; defaults are 480 pixels and quality 80.
 - `PRODUCT_FIRESTORE_DATABASE_ID`: product Firestore database ID. If omitted, the backend falls back to `FIRESTORE_DATABASE_ID`.
 - `PRODUCT_ASSET_DELIVERY`: `signed` (default) or `public`.
 - `PRODUCT_PUBLIC_ASSET_BASE_URL`: optional CDN/public base URL for public delivery.
@@ -60,7 +65,9 @@ npm run products:import -- --manifest ./examples/product-catalog.manifest.json -
 - `PUT /api/business/categories/:categoryId`
 - `DELETE /api/business/categories/:categoryId`
 - `POST /api/business/products`
+- `POST /api/business/products/upload` (multipart product payload and assets)
 - `PUT /api/business/products/:productId`
+- `PUT /api/business/products/:productId/upload` (multipart product payload and replacement assets)
 - `DELETE /api/business/products/:productId`
 - `DELETE /api/business/products/out-of-stock/:productId`
 
