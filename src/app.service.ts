@@ -122,7 +122,8 @@ export class AppService {
         {
           method: 'PUT/DELETE',
           path: '/api/business/products/:productId',
-          description: 'Update or delete a particular product.',
+          description:
+            'Update a particular product or permanently delete it and its complete storage prefixes.',
           auth: 'business session and X-CSRF-Token',
         },
         {
@@ -141,7 +142,8 @@ export class AppService {
         {
           method: 'PUT/DELETE',
           path: '/api/business/companies/:companyId',
-          description: 'Update or safely delete a product company.',
+          description:
+            'Update a product company or safely delete it and its storage prefixes when unused.',
           auth: 'business session and X-CSRF-Token',
         },
         {

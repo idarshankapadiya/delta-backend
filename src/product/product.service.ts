@@ -204,13 +204,20 @@ export class ProductService {
         record.brochureBucket,
       ),
     );
-    const additionalImageUrls = (
-      await Promise.all(
-        this.assetReferenceList(record.additionalImages).map((asset) =>
-          this.resolveAsset(asset),
-        ),
-      )
-    ).filter((url): url is string => Boolean(url));
+    const additionalImageResults = await Promise.all(
+      this.assetReferenceList(record.additionalImages).map(
+        async (asset, index) => ({
+          index,
+          url: await this.resolveAsset(asset),
+        }),
+      ),
+    );
+    const resolvedAdditionalImages = additionalImageResults.filter(
+      (image): image is { index: number; url: string } => Boolean(image.url),
+    );
+    const additionalImageUrls = resolvedAdditionalImages.map(
+      (image) => image.url,
+    );
     const subcategoryId = this.stringValue(record.subcategoryId);
 
     return {
@@ -228,6 +235,9 @@ export class ProductService {
       specifications: this.specificationRecord(record.specifications),
       ...(mainImageUrl ? { mainImageUrl } : {}),
       additionalImageUrls,
+      additionalImageIndices: resolvedAdditionalImages.map(
+        (image) => image.index,
+      ),
       ...(brochureUrl ? { brochureUrl } : {}),
       ...this.catalogRecord(record),
     };
@@ -382,14 +392,14 @@ export class ProductService {
       : undefined;
   }
 
-  private assetReferenceList(value: unknown): ProductAssetReference[] {
+  private assetReferenceList(
+    value: unknown,
+  ): Array<ProductAssetReference | undefined> {
     if (!Array.isArray(value)) {
       return [];
     }
 
-    return value
-      .map((item) => this.assetReference(item, undefined, undefined))
-      .filter((item): item is ProductAssetReference => Boolean(item));
+    return value.map((item) => this.assetReference(item, undefined, undefined));
   }
 
   private async resolveAsset(

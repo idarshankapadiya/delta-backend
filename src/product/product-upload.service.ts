@@ -53,6 +53,62 @@ export class ProductUploadService {
     return this.products.updateProduct(productId, upload.input, upload.files);
   }
 
+  async replaceMainImage(productId: string, request: FastifyRequest) {
+    const image = await this.readSingleImage(request);
+    const thumbnail = await this.createThumbnail(image);
+    return this.products.replaceProductImage(productId, 'main', {
+      mainImage: image,
+      thumbnail,
+    });
+  }
+
+  async addAdditionalImage(productId: string, request: FastifyRequest) {
+    const image = await this.readSingleImage(request);
+    return this.products.replaceProductImage(productId, 'additional', {
+      additionalImages: [image],
+    });
+  }
+
+  async replaceAdditionalImage(
+    productId: string,
+    index: number,
+    request: FastifyRequest,
+  ) {
+    const image = await this.readSingleImage(request);
+    return this.products.replaceProductImage(
+      productId,
+      'additional',
+      { additionalImages: [image] },
+      index,
+    );
+  }
+
+  private async readSingleImage(
+    request: FastifyRequest,
+  ): Promise<ProductUploadFile> {
+    if (!request.isMultipart()) {
+      throw new BadRequestException('multipart/form-data is required');
+    }
+    let image: ProductUploadFile | undefined;
+    for await (const part of request.parts({
+      limits: {
+        files: 1,
+        fields: 0,
+        fileSize: getProductImageUploadMaxBytes(),
+        parts: 1,
+      },
+    })) {
+      if (part.type !== 'file' || part.fieldname !== 'image' || image) {
+        throw new BadRequestException(
+          'Exactly one image file is required in the image field',
+        );
+      }
+      image = await this.imageFile(await part.toBuffer(), part.filename);
+    }
+    if (!image) throw new BadRequestException('Image file is required');
+    return image;
+  }
+
   private async readProductUpload<T extends object>(
     request: FastifyRequest,
     dto: Type<T>,

@@ -12,6 +12,8 @@ import {
 import {
   ApiBody,
   ApiConsumes,
+  ApiConflictResponse,
+  ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiSecurity,
@@ -24,10 +26,13 @@ import {
   CreateProductDto,
   ProductCategoryParamsDto,
   ProductCompanyParamsDto,
+  ProductImageParamsDto,
   ProductResourceParamsDto,
+  ProductSpecificationParamsDto,
   UpdateProductCategoryDto,
   UpdateProductCompanyDto,
   UpdateProductDto,
+  UpdateProductSpecificationDto,
 } from '../product/dto/product-mutation.dto';
 import { ProductMutationService } from '../product/product-mutation.service';
 import { ProductUploadService } from '../product/product-upload.service';
@@ -74,7 +79,30 @@ export class BusinessProductController {
   }
 
   @Delete('companies/:companyId')
-  @ApiOperation({ summary: 'Delete an unused product company' })
+  @ApiOperation({
+    summary: 'Delete an unused product company',
+    description:
+      'Deletes a company only when no products reference it, removes the company from linked categories, and clears its product and thumbnail storage prefixes, including empty folders.',
+  })
+  @ApiOkResponse({
+    description:
+      'The unused company, its owned storage prefixes, and its category links were deleted.',
+    schema: {
+      type: 'object',
+      required: [
+        'ok',
+        'deletedCompanyId',
+        'deletedAssets',
+        'updatedCategories',
+      ],
+      properties: {
+        ok: { type: 'boolean', example: true },
+        deletedCompanyId: { type: 'string' },
+        deletedAssets: { type: 'integer', minimum: 0 },
+        updatedCategories: { type: 'integer', minimum: 0 },
+      },
+    },
+  })
   async deleteCompany(
     @Param() params: ProductCompanyParamsDto,
     @Req() request: FastifyRequest,
@@ -153,6 +181,91 @@ export class BusinessProductController {
     return result;
   }
 
+  @Put('products/:productId/specifications/:key')
+  @ApiOperation({
+    summary: 'Edit one product specification',
+    description:
+      'Updates an existing specification value and optionally renames its key. Returns 404 when the product or specification does not exist and 409 when the new key already exists.',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['value'],
+      properties: {
+        key: { type: 'string', minLength: 1, maxLength: 160 },
+        value: {
+          description: 'String, number, boolean, or null.',
+          oneOf: [
+            { type: 'string' },
+            { type: 'number' },
+            { type: 'boolean' },
+            { type: 'string', nullable: true, enum: [null] },
+          ],
+        },
+      },
+    },
+  })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      required: ['ok', 'productId', 'key', 'value'],
+      properties: {
+        ok: { type: 'boolean', example: true },
+        productId: { type: 'string' },
+        key: { type: 'string' },
+        value: {
+          description:
+            'Updated specification value (string, number, boolean, or null).',
+        },
+      },
+    },
+  })
+  @ApiNotFoundResponse({ description: 'Product or specification not found.' })
+  @ApiConflictResponse({ description: 'Replacement key already exists.' })
+  async updateProductSpecification(
+    @Param() params: ProductSpecificationParamsDto,
+    @Body() body: UpdateProductSpecificationDto,
+    @Req() request: FastifyRequest,
+  ) {
+    const result = await this.products.updateProductSpecification(
+      params.productId,
+      params.key,
+      body,
+    );
+    this.auditMutation(request, 'product_specification_update');
+    return result;
+  }
+
+  @Delete('products/:productId/specifications/:key')
+  @ApiOperation({
+    summary: 'Delete one product specification',
+    description:
+      'Removes an existing specification. Returns 404 when the product or specification does not exist.',
+  })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      required: ['ok', 'productId', 'deletedKey'],
+      properties: {
+        ok: { type: 'boolean', example: true },
+        productId: { type: 'string' },
+        deletedKey: { type: 'string' },
+      },
+    },
+  })
+  @ApiNotFoundResponse({ description: 'Product or specification not found.' })
+  async deleteProductSpecification(
+    @Param() params: ProductSpecificationParamsDto,
+    @Req() request: FastifyRequest,
+  ) {
+    const result = await this.products.deleteProductSpecification(
+      params.productId,
+      params.key,
+    );
+    this.auditMutation(request, 'product_specification_delete');
+    return result;
+  }
+
   @Put('products/:productId/upload')
   @ApiOperation({ summary: 'Update a product and upload replacement assets' })
   @ApiConsumes('multipart/form-data')
@@ -169,11 +282,109 @@ export class BusinessProductController {
     return result;
   }
 
+  @Put('products/:productId/main-image')
+  @ApiOperation({
+    summary: 'Replace the main image and regenerate its WebP thumbnail',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody(singleImageBody())
+  @ApiOkResponse(imageMutationResponse())
+  @ApiNotFoundResponse({ description: 'Product not found.' })
+  async replaceMainImage(
+    @Param() params: ProductResourceParamsDto,
+    @Req() request: FastifyRequest,
+  ) {
+    const result = await this.productUploads.replaceMainImage(
+      params.productId,
+      request,
+    );
+    this.auditMutation(request, 'product_main_image_replace');
+    return result;
+  }
+
+  @Delete('products/:productId/main-image')
+  @ApiOperation({
+    summary: 'Delete the main image and generated thumbnail',
+    description:
+      'Removes the main image and thumbnail objects and clears current and legacy image references from the product.',
+  })
+  @ApiOkResponse(imageMutationResponse(true))
+  @ApiNotFoundResponse({ description: 'Product or main image not found.' })
+  async deleteMainImage(
+    @Param() params: ProductResourceParamsDto,
+    @Req() request: FastifyRequest,
+  ) {
+    const result = await this.products.deleteProductImage(
+      params.productId,
+      'main',
+    );
+    this.auditMutation(request, 'product_main_image_delete');
+    return result;
+  }
+
+  @Post('products/:productId/additional-images')
+  @ApiOperation({ summary: 'Append one additional image (maximum 20)' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody(singleImageBody())
+  @ApiOkResponse(imageMutationResponse())
+  @ApiNotFoundResponse({ description: 'Product not found.' })
+  async addAdditionalImage(
+    @Param() params: ProductResourceParamsDto,
+    @Req() request: FastifyRequest,
+  ) {
+    const result = await this.productUploads.addAdditionalImage(
+      params.productId,
+      request,
+    );
+    this.auditMutation(request, 'product_additional_image_add');
+    return result;
+  }
+
+  @Put('products/:productId/additional-images/:index')
+  @ApiOperation({
+    summary: 'Replace one additional image by its zero-based index',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody(singleImageBody())
+  @ApiOkResponse(imageMutationResponse())
+  @ApiNotFoundResponse({ description: 'Product or image index not found.' })
+  async replaceAdditionalImage(
+    @Param() params: ProductImageParamsDto,
+    @Req() request: FastifyRequest,
+  ) {
+    const result = await this.productUploads.replaceAdditionalImage(
+      params.productId,
+      Number(params.index),
+      request,
+    );
+    this.auditMutation(request, 'product_additional_image_replace');
+    return result;
+  }
+
+  @Delete('products/:productId/additional-images/:index')
+  @ApiOperation({
+    summary: 'Delete one additional image by its zero-based index',
+  })
+  @ApiOkResponse(imageMutationResponse(true))
+  @ApiNotFoundResponse({ description: 'Product or image index not found.' })
+  async deleteAdditionalImage(
+    @Param() params: ProductImageParamsDto,
+    @Req() request: FastifyRequest,
+  ) {
+    const result = await this.products.deleteProductImage(
+      params.productId,
+      'additional',
+      Number(params.index),
+    );
+    this.auditMutation(request, 'product_additional_image_delete');
+    return result;
+  }
+
   @Delete('products/out-of-stock/:productId')
   @ApiOperation({
     summary: 'Delete an out-of-stock product and unused relationships',
     description:
-      'Deletes the product only when it is out of stock. Its company and category are also deleted when no other products reference them.',
+      'Deletes the product only when it is out of stock and clears its complete product and thumbnail storage prefixes, including empty folders. Its company and category are also deleted when no other products reference them; deleting the last company product clears the company storage prefixes.',
   })
   @ApiOkResponse(productDeletionResponse())
   async deleteOutOfStockProduct(
@@ -189,11 +400,15 @@ export class BusinessProductController {
 
   @Delete('products/:productId')
   @ApiOperation({
-    summary: 'Delete a product and unused relationships',
+    summary: 'Permanently delete a product',
     description:
-      'Deletes the product. Its company and category are also deleted when no other products reference them.',
+      'Permanently deletes the selected product regardless of its stock status and clears its complete product and thumbnail storage prefixes, including empty folders. Its company and category are also deleted when no other products reference them; deleting the last company product clears the company storage prefixes. This action cannot be undone.',
   })
-  @ApiOkResponse(productDeletionResponse())
+  @ApiOkResponse(
+    productDeletionResponse(
+      'The product and its complete owned storage prefixes were permanently deleted. Nullable relationship IDs identify any company or category that was also deleted.',
+    ),
+  )
   async deleteProduct(
     @Param() params: ProductResourceParamsDto,
     @Req() request: FastifyRequest,
@@ -215,10 +430,11 @@ export class BusinessProductController {
   }
 }
 
-function productDeletionResponse() {
+function productDeletionResponse(
+  description = 'The product was deleted. Nullable relationship IDs identify any company or category that was also deleted.',
+) {
   return {
-    description:
-      'The product was deleted. Nullable relationship IDs identify any company or category that was also deleted.',
+    description,
     schema: {
       type: 'object',
       required: [
@@ -232,10 +448,53 @@ function productDeletionResponse() {
       properties: {
         ok: { type: 'boolean', example: true },
         deletedProductId: { type: 'string' },
-        deletedAssets: { type: 'integer', minimum: 0 },
+        deletedAssets: {
+          type: 'integer',
+          minimum: 0,
+          description:
+            'Number of stored objects removed from the product prefixes, including orphaned objects and folder markers.',
+        },
         deletedCompanyId: { type: 'string', nullable: true },
         deletedCategoryId: { type: 'string', nullable: true },
         updatedCategories: { type: 'integer', minimum: 0 },
+      },
+    },
+  };
+}
+
+function singleImageBody() {
+  return {
+    schema: {
+      type: 'object',
+      required: ['image'],
+      properties: {
+        image: {
+          type: 'string',
+          format: 'binary',
+          description: 'One JPEG, PNG, WebP, or AVIF image, up to 20 MB.',
+        },
+      },
+    },
+  };
+}
+
+function imageMutationResponse(deleting = false) {
+  return {
+    schema: {
+      type: 'object',
+      required: deleting
+        ? ['ok', 'productId', 'image', 'deletedAssets']
+        : ['ok', 'productId', 'image'],
+      properties: {
+        ok: { type: 'boolean', example: true },
+        productId: { type: 'string' },
+        image: { type: 'string', enum: ['main', 'additional'] },
+        index: {
+          type: 'integer',
+          minimum: 0,
+          description: 'Zero-based additional image index.',
+        },
+        deletedAssets: { type: 'integer', minimum: 0 },
       },
     },
   };

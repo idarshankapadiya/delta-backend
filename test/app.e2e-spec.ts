@@ -80,7 +80,24 @@ describe('AppController (e2e)', () => {
       .expect('Content-Type', /application\/json/);
     const document = jsonResponse.body as OpenAPIObject;
     expect(document.openapi).toBe('3.0.0');
-    expect(Object.keys(document.paths)).toHaveLength(38);
+    expect(Object.keys(document.paths)).toHaveLength(44);
+    const specificationPath =
+      document.paths['/api/business/products/{productId}/specifications/{key}'];
+    expect(specificationPath?.put).toBeDefined();
+    expect(specificationPath?.delete).toBeDefined();
+    const mainImagePath =
+      document.paths['/api/business/products/{productId}/main-image'];
+    expect(mainImagePath?.put).toBeDefined();
+    expect(mainImagePath?.delete).toBeDefined();
+    const additionalImagesPath =
+      document.paths['/api/business/products/{productId}/additional-images'];
+    expect(additionalImagesPath?.post).toBeDefined();
+    const additionalImagePath =
+      document.paths[
+        '/api/business/products/{productId}/additional-images/{index}'
+      ];
+    expect(additionalImagePath?.put).toBeDefined();
+    expect(additionalImagePath?.delete).toBeDefined();
 
     await request(app.getHttpServer())
       .get('/api/docs/openapi.yaml')
@@ -119,7 +136,16 @@ describe('AppController (e2e)', () => {
       ['PUT', '/api/business/categories/:categoryId'],
       ['DELETE', '/api/business/categories/:categoryId'],
       ['POST', '/api/business/products'],
+      ['POST', '/api/business/products/upload'],
       ['PUT', '/api/business/products/:productId'],
+      ['PUT', '/api/business/products/:productId/specifications/:key'],
+      ['DELETE', '/api/business/products/:productId/specifications/:key'],
+      ['PUT', '/api/business/products/:productId/upload'],
+      ['PUT', '/api/business/products/:productId/main-image'],
+      ['DELETE', '/api/business/products/:productId/main-image'],
+      ['POST', '/api/business/products/:productId/additional-images'],
+      ['PUT', '/api/business/products/:productId/additional-images/:index'],
+      ['DELETE', '/api/business/products/:productId/additional-images/:index'],
       ['DELETE', '/api/business/products/out-of-stock/:productId'],
       ['DELETE', '/api/business/products/:productId'],
       ['GET', '/api/business/catalog/all'],

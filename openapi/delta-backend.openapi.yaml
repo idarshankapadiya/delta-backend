@@ -276,6 +276,9 @@ paths:
       tags:
         - Business Products
     delete:
+      description: Deletes a company only when no products reference it, removes the
+        company from linked categories, and clears its product and thumbnail
+        storage prefixes, including empty folders.
       operationId: BusinessProduct_deleteCompany
       parameters:
         - name: companyId
@@ -285,7 +288,29 @@ paths:
             type: string
       responses:
         "200":
-          description: ""
+          description: The unused company, its owned storage prefixes, and its category
+            links were deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - deletedCompanyId
+                  - deletedAssets
+                  - updatedCategories
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  deletedCompanyId:
+                    type: string
+                  deletedAssets:
+                    type: integer
+                    minimum: 0
+                  updatedCategories:
+                    type: integer
+                    minimum: 0
       security:
         - businessSession: []
           csrfToken: []
@@ -438,8 +463,11 @@ paths:
       tags:
         - Business Products
     delete:
-      description: Deletes the product. Its company and category are also deleted when
-        no other products reference them.
+      description: Permanently deletes the selected product regardless of its stock
+        status and clears its complete product and thumbnail storage prefixes,
+        including empty folders. Its company and category are also deleted when
+        no other products reference them; deleting the last company product
+        clears the company storage prefixes. This action cannot be undone.
       operationId: BusinessProduct_deleteProduct
       parameters:
         - name: productId
@@ -449,8 +477,9 @@ paths:
             type: string
       responses:
         "200":
-          description: The product was deleted. Nullable relationship IDs identify any
-            company or category that was also deleted.
+          description: The product and its complete owned storage prefixes were
+            permanently deleted. Nullable relationship IDs identify any company
+            or category that was also deleted.
           content:
             application/json:
               schema:
@@ -471,6 +500,8 @@ paths:
                   deletedAssets:
                     type: integer
                     minimum: 0
+                    description: Number of stored objects removed from the product prefixes,
+                      including orphaned objects and folder markers.
                   deletedCompanyId:
                     type: string
                     nullable: true
@@ -483,7 +514,123 @@ paths:
       security:
         - businessSession: []
           csrfToken: []
-      summary: Delete a product and unused relationships
+      summary: Permanently delete a product
+      tags:
+        - Business Products
+  /api/business/products/{productId}/specifications/{key}:
+    put:
+      description: Updates an existing specification value and optionally renames its
+        key. Returns 404 when the product or specification does not exist and
+        409 when the new key already exists.
+      operationId: BusinessProduct_updateProductSpecification
+      parameters:
+        - name: productId
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: key
+          required: true
+          in: path
+          schema:
+            maxLength: 160
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - value
+              properties:
+                key:
+                  type: string
+                  minLength: 1
+                  maxLength: 160
+                value:
+                  description: String, number, boolean, or null.
+                  oneOf:
+                    - type: string
+                    - type: number
+                    - type: boolean
+                    - type: string
+                      nullable: true
+                      enum:
+                        - null
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - productId
+                  - key
+                  - value
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  productId:
+                    type: string
+                  key:
+                    type: string
+                  value:
+                    description: Updated specification value (string, number, boolean, or null).
+        "404":
+          description: Product or specification not found.
+        "409":
+          description: Replacement key already exists.
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Edit one product specification
+      tags:
+        - Business Products
+    delete:
+      description: Removes an existing specification. Returns 404 when the product or
+        specification does not exist.
+      operationId: BusinessProduct_deleteProductSpecification
+      parameters:
+        - name: productId
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: key
+          required: true
+          in: path
+          schema:
+            maxLength: 160
+            type: string
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - productId
+                  - deletedKey
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  productId:
+                    type: string
+                  deletedKey:
+                    type: string
+        "404":
+          description: Product or specification not found.
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Delete one product specification
       tags:
         - Business Products
   /api/business/products/{productId}/upload:
@@ -532,10 +679,296 @@ paths:
       summary: Update a product and upload replacement assets
       tags:
         - Business Products
+  /api/business/products/{productId}/main-image:
+    put:
+      operationId: BusinessProduct_replaceMainImage
+      parameters:
+        - name: productId
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - image
+              properties:
+                image:
+                  type: string
+                  format: binary
+                  description: One JPEG, PNG, WebP, or AVIF image, up to 20 MB.
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - productId
+                  - image
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  productId:
+                    type: string
+                  image:
+                    type: string
+                    enum:
+                      - main
+                      - additional
+                  index:
+                    type: integer
+                    minimum: 0
+                    description: Zero-based additional image index.
+                  deletedAssets:
+                    type: integer
+                    minimum: 0
+        "404":
+          description: Product not found.
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Replace the main image and regenerate its WebP thumbnail
+      tags:
+        - Business Products
+    delete:
+      description: Removes the main image and thumbnail objects and clears current and
+        legacy image references from the product.
+      operationId: BusinessProduct_deleteMainImage
+      parameters:
+        - name: productId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - productId
+                  - image
+                  - deletedAssets
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  productId:
+                    type: string
+                  image:
+                    type: string
+                    enum:
+                      - main
+                      - additional
+                  index:
+                    type: integer
+                    minimum: 0
+                    description: Zero-based additional image index.
+                  deletedAssets:
+                    type: integer
+                    minimum: 0
+        "404":
+          description: Product or main image not found.
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Delete the main image and generated thumbnail
+      tags:
+        - Business Products
+  /api/business/products/{productId}/additional-images:
+    post:
+      operationId: BusinessProduct_addAdditionalImage
+      parameters:
+        - name: productId
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - image
+              properties:
+                image:
+                  type: string
+                  format: binary
+                  description: One JPEG, PNG, WebP, or AVIF image, up to 20 MB.
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - productId
+                  - image
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  productId:
+                    type: string
+                  image:
+                    type: string
+                    enum:
+                      - main
+                      - additional
+                  index:
+                    type: integer
+                    minimum: 0
+                    description: Zero-based additional image index.
+                  deletedAssets:
+                    type: integer
+                    minimum: 0
+        "404":
+          description: Product not found.
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Append one additional image (maximum 20)
+      tags:
+        - Business Products
+  /api/business/products/{productId}/additional-images/{index}:
+    put:
+      operationId: BusinessProduct_replaceAdditionalImage
+      parameters:
+        - name: productId
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: index
+          required: true
+          in: path
+          schema:
+            pattern: ^(0|[1-9][0-9]*)$
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - image
+              properties:
+                image:
+                  type: string
+                  format: binary
+                  description: One JPEG, PNG, WebP, or AVIF image, up to 20 MB.
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - productId
+                  - image
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  productId:
+                    type: string
+                  image:
+                    type: string
+                    enum:
+                      - main
+                      - additional
+                  index:
+                    type: integer
+                    minimum: 0
+                    description: Zero-based additional image index.
+                  deletedAssets:
+                    type: integer
+                    minimum: 0
+        "404":
+          description: Product or image index not found.
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Replace one additional image by its zero-based index
+      tags:
+        - Business Products
+    delete:
+      operationId: BusinessProduct_deleteAdditionalImage
+      parameters:
+        - name: productId
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: index
+          required: true
+          in: path
+          schema:
+            pattern: ^(0|[1-9][0-9]*)$
+            type: string
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - productId
+                  - image
+                  - deletedAssets
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  productId:
+                    type: string
+                  image:
+                    type: string
+                    enum:
+                      - main
+                      - additional
+                  index:
+                    type: integer
+                    minimum: 0
+                    description: Zero-based additional image index.
+                  deletedAssets:
+                    type: integer
+                    minimum: 0
+        "404":
+          description: Product or image index not found.
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Delete one additional image by its zero-based index
+      tags:
+        - Business Products
   /api/business/products/out-of-stock/{productId}:
     delete:
-      description: Deletes the product only when it is out of stock. Its company and
-        category are also deleted when no other products reference them.
+      description: Deletes the product only when it is out of stock and clears its
+        complete product and thumbnail storage prefixes, including empty
+        folders. Its company and category are also deleted when no other
+        products reference them; deleting the last company product clears the
+        company storage prefixes.
       operationId: BusinessProduct_deleteOutOfStockProduct
       parameters:
         - name: productId
@@ -567,6 +1000,8 @@ paths:
                   deletedAssets:
                     type: integer
                     minimum: 0
+                    description: Number of stored objects removed from the product prefixes,
+                      including orphaned objects and folder markers.
                   deletedCompanyId:
                     type: string
                     nullable: true
@@ -856,6 +1291,9 @@ paths:
         - Products
   /api/products/{productId}:
     get:
+      description: Returns mainImageUrl, additionalImageUrls, and parallel
+        additionalImageIndices. Each index identifies the stored additional
+        image for the business replace and delete endpoints.
       operationId: Product_getProduct
       parameters:
         - name: productId

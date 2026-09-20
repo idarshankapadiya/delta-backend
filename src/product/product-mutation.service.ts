@@ -15,6 +15,7 @@ import {
   QueryDocumentSnapshot,
 } from '@google-cloud/firestore';
 import { Storage } from '@google-cloud/storage';
+import { GoogleAuth } from 'google-auth-library';
 import { ulid } from 'ulid';
 import {
   getProductBucketName,
@@ -28,6 +29,7 @@ import {
   UpdateProductCategoryDto,
   UpdateProductCompanyDto,
   UpdateProductDto,
+  UpdateProductSpecificationDto,
 } from './dto/product-mutation.dto';
 import type {
   ProductAssetReference,
@@ -37,6 +39,10 @@ import type {
 } from './product-upload.types';
 
 type FirestoreRecord = Record<string, unknown>;
+type ProductStoragePrefix = {
+  bucket: string;
+  prefix: string;
+};
 type ResolvedCreateProductInput = CreateProductDto & {
   productId: string;
   companyId: string;
@@ -48,6 +54,7 @@ export class ProductMutationService {
   private readonly logger = new Logger(ProductMutationService.name);
   private firestore?: Firestore;
   private storage?: Storage;
+  private folderAuth?: GoogleAuth;
 
   async createCompany(input: CreateProductCompanyDto) {
     const company = {
@@ -142,6 +149,8 @@ export class ProductMutationService {
       transaction.delete(reference);
     });
 
+    const deletedAssets = await this.deleteCompanyAssetPrefixes(companyId);
+
     const categorySnapshot = await firestore
       .collection('categories')
       .where('companyIds', 'array-contains', companyId)
@@ -158,6 +167,7 @@ export class ProductMutationService {
     return {
       ok: true,
       deletedCompanyId: companyId,
+      deletedAssets,
       updatedCategories: categorySnapshot.size,
     };
   }
@@ -403,6 +413,292 @@ export class ProductMutationService {
     };
   }
 
+  async replaceProductImage(
+    productId: string,
+    kind: 'main' | 'additional',
+    files: ProductUploadFiles,
+    index?: number,
+  ) {
+    if (kind === 'main' && (!files.mainImage || !files.thumbnail)) {
+      throw new BadRequestException('Main image and thumbnail are required');
+    }
+    if (kind === 'additional' && files.additionalImages?.length !== 1) {
+      throw new BadRequestException('Exactly one additional image is required');
+    }
+    const reference = this.getFirestore().collection('products').doc(productId);
+    const snapshot = await reference.get();
+    if (!snapshot.exists) throw new NotFoundException('Product not found');
+    const companyId = this.stringValue(
+      (snapshot.data() as FirestoreRecord).companyId,
+    );
+    const uploaded = await this.uploadProductAssets(
+      productId,
+      companyId,
+      files,
+    );
+    let imageIndex = index;
+    let previous: unknown[];
+
+    try {
+      previous = await this.getFirestore().runTransaction(
+        async (transaction) => {
+          const currentSnapshot = await transaction.get(reference);
+          if (!currentSnapshot.exists)
+            throw new NotFoundException('Product not found');
+          const current = currentSnapshot.data() as FirestoreRecord;
+          if (this.stringValue(current.companyId) !== companyId) {
+            throw new ConflictException(
+              'Product company changed; retry the image upload',
+            );
+          }
+          if (kind === 'main') {
+            transaction.update(reference, {
+              mainImage: uploaded.mainImage,
+              thumbnail: uploaded.thumbnail,
+              updatedAt: FieldValue.serverTimestamp(),
+            });
+            return [current.mainImage, current.thumbnail];
+          } else {
+            const images: unknown[] = Array.isArray(current.additionalImages)
+              ? [...(current.additionalImages as unknown[])]
+              : [];
+            if (index === undefined) {
+              if (images.length >= 20) {
+                throw new BadRequestException(
+                  'A product can have at most 20 additional images',
+                );
+              }
+              imageIndex = images.length;
+              images.push(uploaded.additionalImages?.[0]);
+            } else {
+              if (
+                !Number.isInteger(index) ||
+                index < 0 ||
+                index >= images.length
+              ) {
+                throw new NotFoundException('Additional image not found');
+              }
+              const replaced = images[index];
+              images[index] = uploaded.additionalImages?.[0];
+              transaction.update(reference, {
+                additionalImages: images,
+                updatedAt: FieldValue.serverTimestamp(),
+              });
+              return [replaced];
+            }
+            transaction.update(reference, {
+              additionalImages: images,
+              updatedAt: FieldValue.serverTimestamp(),
+            });
+            return [];
+          }
+        },
+      );
+    } catch (error) {
+      await this.deleteUploadedAssets(uploaded);
+      throw error;
+    }
+
+    await this.deleteAssetReferences(
+      this.ownedImageReferences(previous, productId),
+    );
+    return {
+      ok: true,
+      productId,
+      image: kind,
+      ...(imageIndex === undefined ? {} : { index: imageIndex }),
+    };
+  }
+
+  async deleteProductImage(
+    productId: string,
+    kind: 'main' | 'additional',
+    index?: number,
+  ) {
+    const reference = this.getFirestore().collection('products').doc(productId);
+    const previous = await this.getFirestore().runTransaction(
+      async (transaction) => {
+        const snapshot = await transaction.get(reference);
+        if (!snapshot.exists) throw new NotFoundException('Product not found');
+        const current = snapshot.data() as FirestoreRecord;
+        if (kind === 'main') {
+          if (
+            !current.mainImage &&
+            !current.thumbnail &&
+            !current.mainImagePath &&
+            !current.thumbnailPath
+          ) {
+            throw new NotFoundException('Main image not found');
+          }
+          transaction.update(reference, {
+            mainImage: FieldValue.delete(),
+            thumbnail: FieldValue.delete(),
+            mainImagePath: FieldValue.delete(),
+            mainImageBucket: FieldValue.delete(),
+            thumbnailPath: FieldValue.delete(),
+            thumbnailBucket: FieldValue.delete(),
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+          return [
+            current.mainImage,
+            current.thumbnail,
+            this.legacyImageReference(
+              current.mainImagePath,
+              current.mainImageBucket,
+              getProductBucketName(),
+            ),
+            this.legacyImageReference(
+              current.thumbnailPath,
+              current.thumbnailBucket,
+              getProductThumbnailBucketName(),
+            ),
+          ];
+        } else {
+          const images: unknown[] = Array.isArray(current.additionalImages)
+            ? [...(current.additionalImages as unknown[])]
+            : [];
+          if (
+            index === undefined ||
+            !Number.isInteger(index) ||
+            index < 0 ||
+            index >= images.length
+          ) {
+            throw new NotFoundException('Additional image not found');
+          }
+          const [removed] = images.splice(index, 1);
+          transaction.update(reference, {
+            additionalImages: images,
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+          return [removed];
+        }
+      },
+    );
+    const deletedAssets = await this.deleteAssetReferences(
+      this.ownedImageReferences(previous, productId),
+    );
+    return {
+      ok: true,
+      productId,
+      image: kind,
+      deletedAssets,
+      ...(index === undefined ? {} : { index }),
+    };
+  }
+
+  private ownedImageReferences(values: unknown[], productId: string) {
+    return values
+      .map((value) => this.storedAssetReference(value))
+      .filter((asset): asset is ProductAssetReference =>
+        Boolean(asset && this.isOwnedProductAsset(asset, productId)),
+      );
+  }
+
+  private legacyImageReference(
+    path: unknown,
+    bucket: unknown,
+    defaultBucket: string,
+  ): ProductAssetReference | undefined {
+    const objectPath = this.stringValue(path);
+    return objectPath
+      ? { bucket: this.stringValue(bucket) || defaultBucket, path: objectPath }
+      : undefined;
+  }
+
+  async updateProductSpecification(
+    productId: string,
+    currentKey: string,
+    input: UpdateProductSpecificationDto,
+  ) {
+    const nextKey = input.key ?? currentKey;
+    this.assertSpecificationKey(currentKey);
+    this.assertSpecificationKey(nextKey);
+    if (!Object.hasOwn(input, 'value')) {
+      throw new BadRequestException('Specification value is required');
+    }
+    this.assertSpecificationValue(input.value);
+
+    const reference = this.getFirestore().collection('products').doc(productId);
+    await this.getFirestore().runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(reference);
+      if (!snapshot.exists) throw new NotFoundException('Product not found');
+
+      const specifications = this.productSpecifications(snapshot.data());
+      if (!Object.hasOwn(specifications, currentKey)) {
+        throw new NotFoundException('Specification not found');
+      }
+      if (nextKey !== currentKey && Object.hasOwn(specifications, nextKey)) {
+        throw new ConflictException('Specification key already exists');
+      }
+
+      const updated = Object.fromEntries([
+        ...Object.entries(specifications).filter(([key]) => key !== currentKey),
+        [nextKey, input.value],
+      ]);
+      this.assertSpecifications(updated);
+      transaction.update(reference, {
+        specifications: updated,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    });
+
+    return { ok: true, productId, key: nextKey, value: input.value };
+  }
+
+  async deleteProductSpecification(productId: string, key: string) {
+    this.assertSpecificationKey(key);
+    const reference = this.getFirestore().collection('products').doc(productId);
+    await this.getFirestore().runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(reference);
+      if (!snapshot.exists) throw new NotFoundException('Product not found');
+
+      const specifications = this.productSpecifications(snapshot.data());
+      if (!Object.hasOwn(specifications, key)) {
+        throw new NotFoundException('Specification not found');
+      }
+
+      transaction.update(reference, {
+        specifications: Object.fromEntries(
+          Object.entries(specifications).filter(([name]) => name !== key),
+        ),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    });
+
+    return { ok: true, productId, deletedKey: key };
+  }
+
+  private productSpecifications(data: FirestoreRecord | undefined) {
+    const value = data?.specifications;
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, string | number | boolean | null>)
+      : {};
+  }
+
+  private assertSpecificationKey(key: string) {
+    if (!key.trim() || key.length > 160) {
+      throw new BadRequestException(
+        'Specification key must be 1 to 160 characters',
+      );
+    }
+  }
+
+  private assertSpecificationValue(value: unknown) {
+    if (
+      value !== null &&
+      typeof value !== 'string' &&
+      typeof value !== 'number' &&
+      typeof value !== 'boolean'
+    ) {
+      throw new BadRequestException(
+        'Specification value must be a primitive or null',
+      );
+    }
+    if (typeof value === 'number' && !Number.isFinite(value)) {
+      throw new BadRequestException('Specification value must be finite');
+    }
+  }
+
   deleteProduct(productId: string) {
     return this.deleteProductRecord(productId, false);
   }
@@ -502,6 +798,7 @@ export class ProductMutationService {
     const deletedAssets = await this.deleteProductAssets(
       productId,
       deletion.data,
+      Boolean(deletion.deletedCompanyId),
     );
     return {
       ok: true,
@@ -919,7 +1216,6 @@ export class ProductMutationService {
   ): Promise<void> {
     if (!replacements) return;
 
-    const companyId = this.stringValue(current.companyId);
     const replaced = [
       ...(replacements.thumbnail ? [current.thumbnail] : []),
       ...(replacements.mainImage ? [current.mainImage] : []),
@@ -931,7 +1227,7 @@ export class ProductMutationService {
     ]
       .map((asset) => this.storedAssetReference(asset))
       .filter((asset): asset is ProductAssetReference =>
-        Boolean(asset && this.isOwnedProductAsset(asset, companyId, productId)),
+        Boolean(asset && this.isOwnedProductAsset(asset, productId)),
       );
 
     await this.deleteAssetReferences(replaced);
@@ -955,8 +1251,11 @@ export class ProductMutationService {
     assets: ProductAssetReference[],
   ): Promise<number> {
     let deleted = 0;
+    const uniqueAssets = new Map(
+      assets.map((asset) => [`${asset.bucket}\n${asset.path}`, asset]),
+    );
     await Promise.all(
-      assets.map(async (asset) => {
+      [...uniqueAssets.values()].map(async (asset) => {
         try {
           await this.getStorage()
             .bucket(asset.bucket)
@@ -977,6 +1276,7 @@ export class ProductMutationService {
   private async deleteProductAssets(
     productId: string,
     data: FirestoreRecord,
+    deleteCompanyAssets = false,
   ): Promise<number> {
     const companyId = this.stringValue(data.companyId);
     const assets = [
@@ -990,24 +1290,204 @@ export class ProductMutationService {
     const references = assets
       .map((asset) => this.storedAssetReference(asset))
       .filter((asset): asset is ProductAssetReference =>
-        Boolean(asset && this.isOwnedProductAsset(asset, companyId, productId)),
+        Boolean(asset && this.isOwnedProductAsset(asset, productId)),
       );
 
-    return this.deleteAssetReferences(references);
+    const prefixes = companyId
+      ? deleteCompanyAssets
+        ? this.companyAssetPrefixes(companyId)
+        : this.productAssetPrefixes(companyId, productId)
+      : [];
+
+    references.forEach((reference) => {
+      const prefix = this.getOwnedProductAssetPrefix(reference, productId);
+      if (prefix) prefixes.push(prefix);
+    });
+
+    return this.deleteAssetPrefixes(prefixes, references);
   }
 
   private isOwnedProductAsset(
     asset: ProductAssetReference,
-    companyId: string,
     productId: string,
   ): boolean {
-    const productPrefix = `products/${companyId}/${productId}/`;
-    const thumbnailPrefix = `product-thumbnails/v1/${companyId}/${productId}/`;
+    return Boolean(this.getOwnedProductAssetPrefix(asset, productId));
+  }
+
+  private getOwnedProductAssetPrefix(
+    asset: ProductAssetReference,
+    productId: string,
+  ): ProductStoragePrefix | undefined {
+    const segments = asset.path.split('/');
+    if (
+      asset.bucket === getProductBucketName() &&
+      segments.length >= 4 &&
+      segments[0] === 'products' &&
+      segments[1] &&
+      segments[2] === productId
+    ) {
+      return {
+        bucket: asset.bucket,
+        prefix: `products/${segments[1]}/${productId}/`,
+      };
+    }
+    if (
+      asset.bucket === getProductThumbnailBucketName() &&
+      segments.length >= 5 &&
+      segments[0] === 'product-thumbnails' &&
+      segments[1] === 'v1' &&
+      segments[2] &&
+      segments[3] === productId
+    ) {
+      return {
+        bucket: asset.bucket,
+        prefix: `product-thumbnails/v1/${segments[2]}/${productId}/`,
+      };
+    }
+    return undefined;
+  }
+
+  private productAssetPrefixes(
+    companyId: string,
+    productId: string,
+  ): ProductStoragePrefix[] {
+    return [
+      {
+        bucket: getProductBucketName(),
+        prefix: `products/${companyId}/${productId}/`,
+      },
+      {
+        bucket: getProductThumbnailBucketName(),
+        prefix: `product-thumbnails/v1/${companyId}/${productId}/`,
+      },
+    ];
+  }
+
+  private companyAssetPrefixes(companyId: string): ProductStoragePrefix[] {
+    return [
+      {
+        bucket: getProductBucketName(),
+        prefix: `products/${companyId}/`,
+      },
+      {
+        bucket: getProductThumbnailBucketName(),
+        prefix: `product-thumbnails/v1/${companyId}/`,
+      },
+    ];
+  }
+
+  private deleteCompanyAssetPrefixes(companyId: string): Promise<number> {
+    return this.deleteAssetPrefixes(this.companyAssetPrefixes(companyId));
+  }
+
+  private async deleteAssetPrefixes(
+    prefixes: ProductStoragePrefix[],
+    referencedAssets: ProductAssetReference[] = [],
+  ): Promise<number> {
+    const assets = new Map<string, ProductAssetReference>();
+    const addAsset = (asset: ProductAssetReference) => {
+      assets.set(`${asset.bucket}\n${asset.path}`, asset);
+    };
+    referencedAssets.forEach(addAsset);
+
+    await Promise.all(
+      this.uniqueStoragePrefixes(prefixes).map(async ({ bucket, prefix }) => {
+        try {
+          const [files] = await this.getStorage().bucket(bucket).getFiles({
+            prefix,
+          });
+          files.forEach((file) => addAsset({ bucket, path: file.name }));
+        } catch (error) {
+          // Folder placeholders are ordinary zero-byte objects in
+          // flat-namespace buckets. Try that exact object as a fallback when
+          // the full prefix cannot be listed.
+          addAsset({ bucket, path: prefix });
+          this.logger.error(
+            `Unable to list product assets under ${bucket}/${prefix}`,
+            error instanceof Error ? error.stack : undefined,
+          );
+        }
+      }),
+    );
+
+    const deletedAssets = await this.deleteAssetReferences([
+      ...assets.values(),
+    ]);
+    await this.deleteEmptyStorageFolders(prefixes);
+    return deletedAssets;
+  }
+
+  private async deleteEmptyStorageFolders(
+    prefixes: ProductStoragePrefix[],
+  ): Promise<void> {
+    if (prefixes.length === 0) return;
+    const client = await this.getFolderAuth().getClient();
+    const buckets = new Map<string, string[]>();
+    this.uniqueStoragePrefixes(prefixes).forEach(({ bucket, prefix }) => {
+      buckets.set(bucket, [...(buckets.get(bucket) ?? []), prefix]);
+    });
+
+    for (const [bucket, bucketPrefixes] of buckets) {
+      const folders = new Set<string>();
+      for (const prefix of bucketPrefixes) {
+        let pageToken: string | undefined;
+        do {
+          let response: {
+            data: { items?: { name: string }[]; nextPageToken?: string };
+          };
+          try {
+            response = await client.request({
+              url: `https://storage.googleapis.com/storage/v1/b/${encodeURIComponent(bucket)}/folders`,
+              params: { prefix, ...(pageToken ? { pageToken } : {}) },
+            });
+          } catch (error) {
+            if (this.isFlatNamespaceFolderError(error)) break;
+            throw error;
+          }
+          response.data.items?.forEach((folder) => {
+            if (folder.name.startsWith(prefix)) folders.add(folder.name);
+          });
+          pageToken = response.data.nextPageToken;
+        } while (pageToken);
+      }
+
+      for (const folder of [...folders].sort((a, b) => b.length - a.length)) {
+        try {
+          await client.request({
+            method: 'DELETE',
+            url: `https://storage.googleapis.com/storage/v1/b/${encodeURIComponent(bucket)}/folders/${encodeURIComponent(folder)}`,
+          });
+        } catch (error) {
+          if (this.storageErrorStatus(error) !== 404) throw error;
+        }
+      }
+    }
+  }
+
+  private isFlatNamespaceFolderError(error: unknown): boolean {
     return (
-      (asset.bucket === getProductBucketName() &&
-        asset.path.startsWith(productPrefix)) ||
-      (asset.bucket === getProductThumbnailBucketName() &&
-        asset.path.startsWith(thumbnailPrefix))
+      this.storageErrorStatus(error) === 409 &&
+      error instanceof Error &&
+      error.message.includes('does not support hierarchical namespace')
+    );
+  }
+
+  private storageErrorStatus(error: unknown): number | undefined {
+    if (typeof error !== 'object' || error === null) return undefined;
+    const response = (error as { response?: { status?: number } }).response;
+    return response?.status;
+  }
+
+  private uniqueStoragePrefixes(
+    prefixes: ProductStoragePrefix[],
+  ): ProductStoragePrefix[] {
+    return Array.from(
+      new Map(
+        prefixes.map((prefix) => [
+          `${prefix.bucket}\n${prefix.prefix}`,
+          prefix,
+        ]),
+      ).values(),
     );
   }
 
@@ -1199,5 +1679,14 @@ export class ProductMutationService {
   private getStorage() {
     if (!this.storage) this.storage = new Storage();
     return this.storage;
+  }
+
+  private getFolderAuth() {
+    if (!this.folderAuth) {
+      this.folderAuth = new GoogleAuth({
+        scopes: ['https://www.googleapis.com/auth/devstorage.full_control'],
+      });
+    }
+    return this.folderAuth;
   }
 }

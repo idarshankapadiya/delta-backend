@@ -46,6 +46,7 @@ export interface ProductDetail extends ProductListItem {
   specifications: Record<string, string | number | boolean | null>;
   mainImageUrl?: string;
   additionalImageUrls: string[];
+  additionalImageIndices: number[];
   brochureUrl?: string;
   catalog?: {
     id?: string;

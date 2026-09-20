@@ -3286,6 +3286,55 @@
               }
             },
             {
+              "name": "Edit one product specification",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/products/{{productId}}/specifications/{{key}}",
+                "description": "Generated from OpenAPI operation BusinessProduct_updateProductSpecification. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"key\": \"<key>\",\n  \"value\": \"<value>\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Delete one product specification",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/products/{{productId}}/specifications/{{key}}",
+                "description": "Generated from OpenAPI operation BusinessProduct_deleteProductSpecification. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
               "name": "Update a product and upload replacement assets",
               "request": {
                 "method": "PUT",
@@ -3329,6 +3378,126 @@
                     }
                   ]
                 }
+              }
+            },
+            {
+              "name": "Replace the main image and regenerate its WebP thumbnail",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/products/{{productId}}/main-image",
+                "description": "Generated from OpenAPI operation BusinessProduct_replaceMainImage. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "image",
+                      "type": "file",
+                      "src": []
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Delete the main image and generated thumbnail",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/products/{{productId}}/main-image",
+                "description": "Generated from OpenAPI operation BusinessProduct_deleteMainImage. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "Append one additional image (maximum 20)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/products/{{productId}}/additional-images",
+                "description": "Generated from OpenAPI operation BusinessProduct_addAdditionalImage. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "image",
+                      "type": "file",
+                      "src": []
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Replace one additional image by its zero-based index",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/products/{{productId}}/additional-images/{{index}}",
+                "description": "Generated from OpenAPI operation BusinessProduct_replaceAdditionalImage. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "image",
+                      "type": "file",
+                      "src": []
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Delete one additional image by its zero-based index",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/products/{{productId}}/additional-images/{{index}}",
+                "description": "Generated from OpenAPI operation BusinessProduct_deleteAdditionalImage. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
               }
             }
           ]

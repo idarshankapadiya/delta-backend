@@ -181,6 +181,7 @@ The two services are independent:
 - Firestore database: `client-message-db`
 - Private catalog bucket: `darshanent_catalog_dir`
 - Public thumbnail bucket: `darshanent-thumbnail-dir`
+- Private product bucket: `darshanent_product_dir`
 
 Enable:
 
@@ -202,7 +203,10 @@ compute.googleapis.com
 The runtime service account needs:
 
 - `roles/datastore.user` on the project;
-- `roles/storage.objectUser` on both catalog buckets;
+- `roles/storage.objectUser` on the private catalog, public thumbnail, and
+  private product buckets; product-prefix cleanup requires object list and
+  delete access plus folder list and delete access for hierarchical-namespace
+  buckets;
 - `roles/iam.serviceAccountTokenCreator` on itself for signed GCS URLs;
 - `roles/secretmanager.secretAccessor` on:
   - `BUSINESS_UI_CSRF_SECRET`;

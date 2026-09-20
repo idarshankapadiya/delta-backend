@@ -34,7 +34,11 @@ export class ProductController {
   }
 
   @Get('products/:productId')
-  @ApiOperation({ summary: 'Get active product details' })
+  @ApiOperation({
+    summary: 'Get active product details',
+    description:
+      'Returns mainImageUrl, additionalImageUrls, and parallel additionalImageIndices. Each index identifies the stored additional image for the business replace and delete endpoints.',
+  })
   @Header('Cache-Control', 'public, max-age=60, s-maxage=300')
   getProduct(@Param() params: ProductParamsDto) {
     return this.productService.getProduct(params.productId);

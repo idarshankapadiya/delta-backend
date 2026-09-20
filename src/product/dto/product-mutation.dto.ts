@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  Allow,
   ArrayMaxSize,
   IsArray,
   IsBoolean,
@@ -23,6 +24,31 @@ export class ProductResourceParamsDto {
   @IsString()
   @Matches(productResourceIdPattern)
   productId: string;
+}
+
+export class ProductImageParamsDto extends ProductResourceParamsDto {
+  @IsString()
+  @Matches(/^(0|[1-9][0-9]*)$/)
+  index: string;
+}
+
+export class ProductSpecificationParamsDto extends ProductResourceParamsDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(160)
+  key: string;
+}
+
+export class UpdateProductSpecificationDto {
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(160)
+  key?: string;
+
+  // Validated in the service so null remains a valid specification value.
+  @Allow()
+  value: string | number | boolean | null;
 }
 
 export class ProductCompanyParamsDto {

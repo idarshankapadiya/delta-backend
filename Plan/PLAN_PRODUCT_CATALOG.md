@@ -12,10 +12,12 @@
 - The React product page calls the backend API, uses string product IDs, filters by company/category/stock, searches through the backend, and uses cursor pagination.
 - Authenticated business APIs create, update, and delete product companies, categories, and products. All mutations require the business session, approved origin, and CSRF token.
 - Product updates support name, SKU/model, company/category, price, currency, discount, inventory, descriptions, specifications, and GCS asset references.
+- `PUT` and `DELETE /api/business/products/:productId/specifications/:key` edit or remove one existing specification. PUT accepts `{ "value": ... }` and an optional replacement `key`; both operations update the specification map in a Firestore transaction, return 404 for missing products or keys, and PUT returns 409 for a duplicate replacement key.
 - Multipart product creation requires a main image; updates may provide a replacement. The backend generates a resized WebP thumbnail from every uploaded main image. Both endpoints also accept up to 20 additional images and an optional PDF brochure; the browser never supplies object paths.
+- Dedicated business image routes replace or delete the main image and its thumbnail, append an additional image, or replace/delete one additional image by zero-based index. Main-image deletion also clears legacy image and thumbnail path fields. Single-image uploads use the multipart `image` field and the same image validation as product uploads. Product detail returns `additionalImageIndices` alongside resolved URLs so an unavailable image URL cannot shift the editor's delete target. Image references update in Firestore transactions; prior owned GCS objects are cleaned after commit.
 - Generated WebP thumbnails are stored under `product-thumbnails/v1/{companyId}/{productId}/` in `GCS_PRODUCT_THUMBNAIL_BUCKET`. Original main images, additional images, and brochures are stored under `products/{companyId}/{productId}/` in `GCS_PRODUCT_BUCKET`.
 - Company/category renames propagate their denormalized name and slug into existing product documents.
-- Product deletion also attempts to remove its own GCS assets and atomically deletes its company or category when no other products reference them. The response returns nullable `deletedCompanyId` and `deletedCategoryId` fields so clients can remove those resources immediately. Company/category deletion returns `409 Conflict` while products still reference the resource, and the out-of-stock delete endpoint refuses in-stock products.
+- Product deletion sweeps every object under its GCS product and thumbnail prefixes, including orphaned upload versions and folder-marker objects, then removes empty hierarchical-namespace folders from child to parent. It atomically deletes its Firestore company or category when no other products reference them; deleting the final company product also sweeps both company-level GCS prefixes and folders. Direct deletion of an unused company performs the same company-prefix cleanup. The response returns nullable `deletedCompanyId` and `deletedCategoryId` fields so clients can remove those resources immediately. Company/category deletion returns `409 Conflict` while products still reference the resource, and the out-of-stock delete endpoint refuses in-stock products.
 
 ## Firestore Document Requirements
 
@@ -41,7 +43,7 @@
 
 1. Create or select a Native-mode Firestore database geographically close to Cloud Run.
 2. Confirm `darshanent_product_dir` exists. It can remain private because the prepared deployment uses signed delivery.
-3. Give the Cloud Run runtime service account Firestore read/write access and GCS object read/delete access; signed URLs may also require service-account token-creator permission.
+3. Give the Cloud Run runtime service account Firestore read/write access and GCS object read/list/delete and folder list/delete access; prefix cleanup must remove both objects and empty hierarchical-namespace folders. Signed URLs may also require service-account token-creator permission.
 4. Run the index script and wait until every index reports `READY`.
 5. Prepare a manifest based on `examples/product-catalog.manifest.json` and its referenced asset directory.
 6. Run the importer without `--apply`; review counts and validation output.
@@ -68,6 +70,9 @@ npm run products:import -- --manifest ./examples/product-catalog.manifest.json -
 - `POST /api/business/products/upload` (multipart product payload and assets)
 - `PUT /api/business/products/:productId`
 - `PUT /api/business/products/:productId/upload` (multipart product payload and replacement assets)
+- `PUT` / `DELETE /api/business/products/:productId/main-image`
+- `POST /api/business/products/:productId/additional-images`
+- `PUT` / `DELETE /api/business/products/:productId/additional-images/:index`
 - `DELETE /api/business/products/:productId`
 - `DELETE /api/business/products/out-of-stock/:productId`
 
