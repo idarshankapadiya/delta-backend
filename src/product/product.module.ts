@@ -7,6 +7,6 @@ import { ProductUploadService } from './product-upload.service';
 @Module({
   controllers: [ProductController],
   providers: [ProductService, ProductMutationService, ProductUploadService],
-  exports: [ProductMutationService, ProductUploadService],
+  exports: [ProductService, ProductMutationService, ProductUploadService],
 })
 export class ProductModule {}

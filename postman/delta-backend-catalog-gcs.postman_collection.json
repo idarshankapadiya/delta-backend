@@ -3503,8 +3503,99 @@
           ]
         },
         {
+          "name": "Business Quotations",
+          "item": [
+            {
+              "name": "List quotation requests newest first",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/quotation-requests",
+                "description": "Generated from OpenAPI operation BusinessQuotation_getQuotations. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "Get one quotation request",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/quotation-requests/{{quotationId}}",
+                "description": "Generated from OpenAPI operation BusinessQuotation_getQuotation. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "Update quotation workflow status",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/quotation-requests/{{quotationId}}/status",
+                "description": "Generated from OpenAPI operation BusinessQuotation_updateStatus. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"new\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
           "name": "Catalog",
           "item": [
+            {
+              "name": "Create catalog access from a Firebase email link",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{base_url}}/api/catalog/access/firebase/email-link",
+                "description": "Generated from OpenAPI operation Catalog_createFirebaseEmailAccess. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"id_token\": \"<id_token>\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
             {
               "name": "Handle Google catalog access redirect",
               "request": {
@@ -3520,6 +3611,87 @@
               }
             },
             {
+              "name": "Request a catalog access OTP",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{base_url}}/api/catalog/access/otp/request",
+                "description": "Generated from OpenAPI operation Catalog_requestAccessOtp. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"identifier\": \"<identifier>\",\n  \"captcha_token\": \"<captcha_token>\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Verify a catalog access OTP",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{base_url}}/api/catalog/access/otp/verify",
+                "description": "Generated from OpenAPI operation Catalog_verifyAccessOtp. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"challenge_id\": \"<challenge_id>\",\n  \"code\": \"<code>\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Resend a catalog access OTP",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{base_url}}/api/catalog/access/otp/resend",
+                "description": "Generated from OpenAPI operation Catalog_resendAccessOtp. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"challenge_id\": \"<challenge_id>\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
               "name": "Log out of catalog access",
               "request": {
                 "method": "POST",
@@ -3531,6 +3703,57 @@
                 ],
                 "url": "{{base_url}}/api/catalog/access/logout",
                 "description": "Generated from OpenAPI operation Catalog_logoutAccess. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            }
+          ]
+        },
+        {
+          "name": "Quotations",
+          "item": [
+            {
+              "name": "Validate cart products, quantities, availability, and current totals",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{base_url}}/api/products/cart-validation",
+                "description": "Generated from OpenAPI operation Quotation_validateCart. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"items\": []\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Create a quotation request from an authoritative cart snapshot",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{base_url}}/api/quotation-requests",
+                "description": "Generated from OpenAPI operation Quotation_createQuotation. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"items\": [],\n  \"captcha_token\": \"<captcha_token>\",\n  \"customer\": {\n    \"name\": \"<name>\",\n    \"company\": \"<company>\",\n    \"email\": \"user@example.com\",\n    \"mobile\": \"<mobile>\",\n    \"deliveryLocation\": \"<deliveryLocation>\"\n  },\n  \"notes\": \"<notes>\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
               }
             }
           ]

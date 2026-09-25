@@ -6,7 +6,10 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { SendEmailCommand, SESv2Client } from '@aws-sdk/client-sesv2';
+import { Firestore, Timestamp } from '@google-cloud/firestore';
 import { OAuth2Client } from 'google-auth-library';
+import { applicationDefault, getApps, initializeApp } from 'firebase-admin/app';
+import { getAuth as getFirebaseAuth } from 'firebase-admin/auth';
 import {
   createHash,
   randomBytes,
@@ -15,8 +18,12 @@ import {
 } from 'node:crypto';
 import { ulid } from 'ulid';
 
-type CatalogOtpChannel = 'whatsapp' | 'email';
-type CatalogAuthProvider = 'google' | 'whatsapp_otp' | 'email_otp';
+type CatalogOtpChannel = 'sms' | 'email';
+type CatalogAuthProvider =
+  | 'google'
+  | 'sms_otp'
+  | 'email_otp'
+  | 'firebase_email_link';
 
 interface CatalogInquiry {
   name: string;
@@ -25,8 +32,8 @@ interface CatalogInquiry {
   message?: string;
 }
 
-interface CatalogOtpRequest extends CatalogInquiry {
-  channel: CatalogOtpChannel;
+interface CatalogOtpRequest {
+  identifier: string;
 }
 
 interface CatalogAccessRequestContext {
@@ -35,6 +42,7 @@ interface CatalogAccessRequestContext {
 }
 
 interface CatalogAccessSession {
+  customerId: string;
   expiresAt: Date;
   name: string;
   mobile?: string;
@@ -45,6 +53,7 @@ interface CatalogAccessSession {
 }
 
 interface CatalogAccessSessionSummary {
+  customerId: string;
   expiresAt: Date;
   name: string;
   mobile?: string;
@@ -63,7 +72,7 @@ interface CatalogOtpChallenge {
   resendCount: number;
   expiresAt: Date;
   lockedAt?: Date;
-  inquiry: CatalogOtpRequest;
+  lastSentAt: Date;
   createdIp: string;
   userAgent?: string;
   createdAt: Date;
@@ -89,14 +98,57 @@ interface CatalogSessionGrant {
   email?: string;
   mobile?: string;
   name?: string;
+  customerId?: string;
+  isNewUser?: boolean;
+  profileComplete?: boolean;
+}
+
+interface CatalogCustomer {
+  customerId: string;
+  email?: string;
+  mobile?: string;
+  name: string;
+  profileComplete: boolean;
+  createdAt: Date;
+  lastLoginAt: Date;
+}
+
+export interface CatalogCustomerSummary {
+  customer_id: string;
+  email: string | null;
+  mobile: string | null;
+  name: string;
+  profile_complete: boolean;
+  created_at: string;
+  last_login_at: string;
+}
+
+interface CatalogEmailLinkChallenge {
+  challengeId: string;
+  email: string;
+  hashedLinkToken: string;
+  hashedClaimToken: string;
+  expiresAt: Date;
+  createdAt: Date;
+  completedAt?: Date;
+  customerId?: string;
+  customerName?: string;
+  isNewUser?: boolean;
+  profileComplete?: boolean;
 }
 
 @Injectable()
 export class CatalogAccessService {
   private readonly logger = new Logger(CatalogAccessService.name);
+  private firestore?: Firestore;
   private readonly googleOAuthClient = new OAuth2Client();
   private readonly sessions = new Map<string, CatalogAccessSession>();
   private readonly otpChallenges = new Map<string, CatalogOtpChallenge>();
+  private readonly emailLinkChallenges = new Map<
+    string,
+    CatalogEmailLinkChallenge
+  >();
+  private readonly customers = new Map<string, CatalogCustomer>();
   private readonly auditRecords: CatalogAccessAuditRecord[] = [];
 
   recordInquiry(inquiry: CatalogInquiry, context: CatalogAccessRequestContext) {
@@ -108,6 +160,30 @@ export class CatalogAccessService {
     return {
       ok: true,
       inquiry_only: true,
+    };
+  }
+
+  async listCustomers(): Promise<{ users: CatalogCustomerSummary[] }> {
+    const firestore = this.getOptionalFirestore();
+    const customers = firestore
+      ? await this.listPersistedCustomers(firestore)
+      : [...this.customers.values()];
+
+    return {
+      users: customers
+        .sort(
+          (left, right) =>
+            right.lastLoginAt.getTime() - left.lastLoginAt.getTime(),
+        )
+        .map((customer) => ({
+          customer_id: customer.customerId,
+          email: customer.email ?? null,
+          mobile: customer.mobile ?? null,
+          name: customer.name,
+          profile_complete: customer.profileComplete,
+          created_at: customer.createdAt.toISOString(),
+          last_login_at: customer.lastLoginAt.toISOString(),
+        })),
     };
   }
 
@@ -134,8 +210,10 @@ export class CatalogAccessService {
       }
 
       const name = payload.name?.trim() || email;
-      const session = this.createSession(
+      const customerId = this.customerIdForIdentity(email);
+      const session = await this.createSession(
         {
+          customerId,
           name,
           email,
           authProvider: 'google',
@@ -144,6 +222,20 @@ export class CatalogAccessService {
       );
 
       this.audit({ name, email }, context, 'google_verified', 'google');
+      const existingCustomer =
+        this.customers.get(customerId) ??
+        (await this.loadPersistedCustomer(customerId));
+      const now = new Date();
+      const customer: CatalogCustomer = {
+        customerId,
+        email,
+        name,
+        profileComplete: true,
+        createdAt: existingCustomer?.createdAt ?? now,
+        lastLoginAt: now,
+      };
+      this.customers.set(customerId, customer);
+      await this.persistCustomer(customer);
 
       return {
         ...session,
@@ -162,12 +254,187 @@ export class CatalogAccessService {
     }
   }
 
+  async createFirebaseEmailAccess(
+    idToken: string,
+    context: CatalogAccessRequestContext,
+    handoff?: { challengeId: string; linkToken: string },
+  ): Promise<CatalogSessionGrant> {
+    try {
+      const projectId =
+        process.env.FIREBASE_AUTH_PROJECT_ID?.trim() ||
+        process.env.GOOGLE_CLOUD_PROJECT?.trim() ||
+        'deweb-preview1';
+      const firebaseApp =
+        getApps()[0] ??
+        initializeApp({ credential: applicationDefault(), projectId });
+      const decoded = await getFirebaseAuth(firebaseApp).verifyIdToken(idToken);
+      const email = decoded.email?.trim().toLowerCase();
+      if (!email || decoded.email_verified !== true) {
+        throw new UnauthorizedException(
+          'A verified Firebase email is required',
+        );
+      }
+
+      const { customer, isNewUser } =
+        await this.findOrCreateEmailCustomer(email);
+      if (handoff) {
+        const challenge = await this.requireEmailLinkChallenge(
+          handoff.challengeId,
+          handoff.linkToken,
+          'link',
+        );
+        if (challenge.email !== email) {
+          throw new UnauthorizedException(
+            'The sign-in link does not match this email address',
+          );
+        }
+        challenge.completedAt = new Date();
+        challenge.customerId = customer.customerId;
+        challenge.customerName = customer.name;
+        challenge.isNewUser = isNewUser;
+        challenge.profileComplete = customer.profileComplete;
+        await this.persistEmailLinkChallenge(challenge);
+      }
+      const session = await this.createSession(
+        {
+          customerId: customer.customerId,
+          name: customer.name,
+          email,
+          authProvider: 'firebase_email_link',
+        },
+        context,
+      );
+      this.audit(
+        { name: customer.name, email },
+        context,
+        'firebase_email_link_verified',
+        'firebase_email_link',
+      );
+      return {
+        ...session,
+        customerId: customer.customerId,
+        email,
+        name: customer.name,
+        isNewUser,
+        profileComplete: customer.profileComplete,
+      };
+    } catch (error) {
+      if (error instanceof UnauthorizedException) throw error;
+      this.audit(
+        {},
+        context,
+        'firebase_email_link_failed',
+        'firebase_email_link',
+      );
+      throw new UnauthorizedException(
+        'Invalid or expired Firebase sign-in link',
+        { cause: error },
+      );
+    }
+  }
+
+  async requestFirebaseEmailLink(emailInput: string) {
+    const email = emailInput.trim().toLowerCase();
+    const challengeId = ulid();
+    const linkToken = this.createAccessToken();
+    const claimToken = this.createAccessToken();
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+    const challenge: CatalogEmailLinkChallenge = {
+      challengeId,
+      email,
+      hashedLinkToken: this.hashSessionToken(linkToken),
+      hashedClaimToken: this.hashSessionToken(claimToken),
+      expiresAt,
+      createdAt: new Date(),
+    };
+    this.emailLinkChallenges.set(challengeId, challenge);
+    await this.persistEmailLinkChallenge(challenge);
+    return {
+      challenge_id: challengeId,
+      link_token: linkToken,
+      claim_token: claimToken,
+      expires_at: expiresAt.toISOString(),
+    };
+  }
+
+  async resolveFirebaseEmailLink(challengeId: string, linkToken: string) {
+    const challenge = await this.requireEmailLinkChallenge(
+      challengeId,
+      linkToken,
+      'link',
+    );
+    return { email: challenge.email };
+  }
+
+  async claimFirebaseEmailLink(
+    challengeId: string,
+    claimToken: string,
+    context: CatalogAccessRequestContext,
+  ): Promise<CatalogSessionGrant | null> {
+    const challenge = await this.requireEmailLinkChallenge(
+      challengeId,
+      claimToken,
+      'claim',
+    );
+    if (
+      !challenge.completedAt ||
+      !challenge.customerId ||
+      !challenge.customerName
+    ) {
+      return null;
+    }
+    return this.createSession(
+      {
+        customerId: challenge.customerId,
+        name: challenge.customerName,
+        email: challenge.email,
+        authProvider: 'firebase_email_link',
+      },
+      context,
+    ).then((session) => ({
+      ...session,
+      customerId: challenge.customerId,
+      name: challenge.customerName,
+      email: challenge.email,
+      isNewUser: challenge.isNewUser,
+      profileComplete: challenge.profileComplete,
+    }));
+  }
+
+  private async requireEmailLinkChallenge(
+    challengeId: string,
+    token: string,
+    tokenKind: 'link' | 'claim',
+  ): Promise<CatalogEmailLinkChallenge> {
+    const challenge =
+      this.emailLinkChallenges.get(challengeId) ??
+      (await this.loadPersistedEmailLinkChallenge(challengeId));
+    const expectedHash =
+      tokenKind === 'link'
+        ? challenge?.hashedLinkToken
+        : challenge?.hashedClaimToken;
+    const actualHash = this.hashSessionToken(token);
+    if (
+      !challenge ||
+      challenge.expiresAt.getTime() <= Date.now() ||
+      !expectedHash ||
+      expectedHash.length !== actualHash.length ||
+      !timingSafeEqual(Buffer.from(expectedHash), Buffer.from(actualHash))
+    ) {
+      throw new UnauthorizedException(
+        'Invalid or expired email sign-in request',
+      );
+    }
+    return challenge;
+  }
+
   async requestOtp(
-    inquiry: CatalogOtpRequest,
+    input: CatalogOtpRequest,
     context: CatalogAccessRequestContext,
   ) {
-    const channel = inquiry.channel;
-    const contactKey = this.getOtpContactKey(inquiry);
+    const identity = this.normalizeIdentifier(input.identifier);
+    const channel = identity.channel;
+    const contactKey = `${channel}:${identity.destination}`;
     const challengeId = ulid();
     const otp = this.createOtp();
     const expiresAt = new Date(Date.now() + this.getOtpTtlSeconds() * 1000);
@@ -175,28 +442,25 @@ export class CatalogAccessService {
       challengeId,
       channel,
       contactKey,
-      mobile: inquiry.mobile?.trim(),
-      email: inquiry.email?.trim().toLowerCase(),
+      mobile: channel === 'sms' ? identity.destination : undefined,
+      email: channel === 'email' ? identity.destination : undefined,
       hashedOtp: this.hashOtp(challengeId, contactKey, otp),
       attempts: 0,
       resendCount: 0,
       expiresAt,
-      inquiry: {
-        ...inquiry,
-        mobile: inquiry.mobile?.trim(),
-        email: inquiry.email?.trim().toLowerCase(),
-      },
       createdIp: context.ip,
       userAgent: context.userAgent,
       createdAt: new Date(),
+      lastSentAt: new Date(),
     };
 
     this.otpChallenges.set(challengeId, challenge);
+    await this.persistChallenge(challenge);
 
     try {
       await this.sendOtp(challenge, otp);
       this.audit(
-        inquiry,
+        { mobile: challenge.mobile, email: challenge.email },
         context,
         'otp_requested',
         this.getOtpAuthProvider(channel),
@@ -204,8 +468,9 @@ export class CatalogAccessService {
       );
     } catch (error) {
       this.otpChallenges.delete(challengeId);
+      await this.deletePersistedChallenge(challengeId);
       this.audit(
-        inquiry,
+        { mobile: challenge.mobile, email: challenge.email },
         context,
         'otp_delivery_failed',
         this.getOtpAuthProvider(channel),
@@ -220,30 +485,31 @@ export class CatalogAccessService {
       ok: true,
       challenge_id: challengeId,
       channel,
+      masked_destination: this.maskDestination(challenge),
       expires_at: expiresAt.toISOString(),
       resend_after_seconds: this.getOtpResendAfterSeconds(),
     };
   }
 
-  verifyOtp(
+  async verifyOtp(
     input: {
       challenge_id: string;
-      mobile?: string;
-      email?: string;
-      otp: string;
+      code: string;
     },
     context: CatalogAccessRequestContext,
-  ): CatalogSessionGrant {
-    const challenge = this.otpChallenges.get(input.challenge_id);
+  ): Promise<CatalogSessionGrant> {
+    const challenge =
+      this.otpChallenges.get(input.challenge_id) ??
+      (await this.loadPersistedChallenge(input.challenge_id));
 
-    if (!challenge || !this.isOtpChallengeContactMatch(challenge, input)) {
-      this.audit(input, context, 'otp_invalid_challenge');
+    if (!challenge) {
+      this.audit({}, context, 'otp_invalid_challenge');
       throw new BadRequestException('Invalid OTP challenge');
     }
 
     if (challenge.lockedAt) {
       this.audit(
-        challenge.inquiry,
+        challenge,
         context,
         'otp_challenge_locked',
         this.getOtpAuthProvider(challenge.channel),
@@ -254,8 +520,9 @@ export class CatalogAccessService {
 
     if (challenge.expiresAt.getTime() <= Date.now()) {
       this.otpChallenges.delete(challenge.challengeId);
+      await this.deletePersistedChallenge(challenge.challengeId);
       this.audit(
-        challenge.inquiry,
+        challenge,
         context,
         'otp_challenge_expired',
         this.getOtpAuthProvider(challenge.channel),
@@ -264,13 +531,15 @@ export class CatalogAccessService {
       throw new UnauthorizedException('OTP challenge has expired');
     }
 
-    if (!this.isOtpMatch(challenge, input.otp)) {
+    const otpMatches = await this.verifyDeliveredOtp(challenge, input.code);
+    if (!otpMatches) {
       challenge.attempts += 1;
 
       if (challenge.attempts >= this.getOtpMaxAttempts()) {
         challenge.lockedAt = new Date();
+        await this.persistChallenge(challenge);
         this.audit(
-          challenge.inquiry,
+          challenge,
           context,
           'otp_challenge_locked',
           this.getOtpAuthProvider(challenge.channel),
@@ -279,8 +548,9 @@ export class CatalogAccessService {
         throw new UnauthorizedException('OTP challenge is locked');
       }
 
+      await this.persistChallenge(challenge);
       this.audit(
-        challenge.inquiry,
+        challenge,
         context,
         'otp_verification_failed',
         this.getOtpAuthProvider(challenge.channel),
@@ -290,9 +560,11 @@ export class CatalogAccessService {
     }
 
     const authProvider = this.getOtpAuthProvider(challenge.channel);
-    const session = this.createSession(
+    const { customer, isNewUser } = await this.findOrCreateCustomer(challenge);
+    const session = await this.createSession(
       {
-        name: challenge.inquiry.name,
+        customerId: customer.customerId,
+        name: customer.name,
         mobile: challenge.mobile,
         email: challenge.email,
         authProvider,
@@ -301,8 +573,9 @@ export class CatalogAccessService {
     );
 
     this.otpChallenges.delete(challenge.challengeId);
+    await this.deletePersistedChallenge(challenge.challengeId);
     this.audit(
-      challenge.inquiry,
+      challenge,
       context,
       'otp_verified',
       authProvider,
@@ -311,24 +584,88 @@ export class CatalogAccessService {
 
     return {
       ...session,
-      name: challenge.inquiry.name,
+      customerId: customer.customerId,
+      isNewUser,
+      profileComplete: customer.profileComplete,
+      name: customer.name,
       mobile: challenge.mobile,
       email: challenge.email,
     };
   }
 
-  validateAccessToken(token: string): boolean {
-    return this.getAccessSession(token) !== null;
+  async resendOtp(challengeId: string, context: CatalogAccessRequestContext) {
+    const challenge =
+      this.otpChallenges.get(challengeId) ??
+      (await this.loadPersistedChallenge(challengeId));
+    if (
+      !challenge ||
+      challenge.lockedAt ||
+      challenge.expiresAt.getTime() <= Date.now()
+    ) {
+      throw new BadRequestException('Invalid or expired OTP challenge');
+    }
+
+    const resendAfterSeconds = this.getOtpResendAfterSeconds();
+    const nextAllowedAt =
+      challenge.lastSentAt.getTime() + resendAfterSeconds * 1000;
+    if (nextAllowedAt > Date.now()) {
+      throw new BadRequestException(
+        'Please wait before requesting another code',
+      );
+    }
+
+    const otp = this.createOtp();
+    challenge.hashedOtp = this.hashOtp(
+      challenge.challengeId,
+      challenge.contactKey,
+      otp,
+    );
+    challenge.attempts = 0;
+    challenge.resendCount += 1;
+    challenge.lastSentAt = new Date();
+    challenge.expiresAt = new Date(Date.now() + this.getOtpTtlSeconds() * 1000);
+    await this.sendOtp(challenge, otp);
+    await this.persistChallenge(challenge);
+    this.audit(
+      challenge,
+      context,
+      'otp_resent',
+      this.getOtpAuthProvider(challenge.channel),
+      challenge.channel,
+    );
+
+    return {
+      ok: true,
+      challenge_id: challenge.challengeId,
+      channel: challenge.channel,
+      masked_destination: this.maskDestination(challenge),
+      expires_at: challenge.expiresAt.toISOString(),
+      resend_after_seconds: resendAfterSeconds,
+    };
   }
 
-  revokeAccessSession(token: string | undefined): void {
+  async validateAccessToken(token: string): Promise<boolean> {
+    return (await this.getAccessSession(token)) !== null;
+  }
+
+  async revokeAccessSession(token: string | undefined): Promise<void> {
     if (token) {
       this.sessions.delete(token);
+      const firestore = this.getOptionalFirestore();
+      if (firestore) {
+        await firestore
+          .collection('catalog_access_sessions')
+          .doc(this.hashSessionToken(token))
+          .set({ revoked_at: Timestamp.now() }, { merge: true });
+      }
     }
   }
 
-  getAccessSession(token: string): CatalogAccessSessionSummary | null {
-    const session = this.sessions.get(token);
+  async getAccessSession(
+    token: string,
+  ): Promise<CatalogAccessSessionSummary | null> {
+    const session =
+      this.sessions.get(token) ?? (await this.loadPersistedSession(token));
 
     if (!session) {
       return null;
@@ -336,10 +673,12 @@ export class CatalogAccessService {
 
     if (session.expiresAt.getTime() <= Date.now()) {
       this.sessions.delete(token);
+      await this.revokeAccessSession(token);
       return null;
     }
 
     return {
+      customerId: session.customerId,
       expiresAt: session.expiresAt,
       name: session.name,
       mobile: session.mobile,
@@ -348,19 +687,23 @@ export class CatalogAccessService {
     };
   }
 
-  private createSession(
+  private async createSession(
     input: {
+      customerId?: string;
       name: string;
       mobile?: string;
       email?: string;
       authProvider: CatalogAuthProvider;
     },
     context: CatalogAccessRequestContext,
-  ): CatalogSessionGrant {
+  ): Promise<CatalogSessionGrant> {
     const token = this.createAccessToken();
     const expiresAt = new Date(Date.now() + this.getSessionTtlSeconds() * 1000);
 
     this.sessions.set(token, {
+      customerId:
+        input.customerId ??
+        this.customerIdForIdentity(input.email, input.mobile),
       expiresAt,
       name: input.name,
       mobile: input.mobile,
@@ -369,6 +712,7 @@ export class CatalogAccessService {
       createdIp: context.ip,
       userAgent: context.userAgent,
     });
+    await this.persistSession(token, this.sessions.get(token)!);
 
     return {
       token,
@@ -407,37 +751,393 @@ export class CatalogAccessService {
     );
   }
 
-  private isOtpChallengeContactMatch(
-    challenge: CatalogOtpChallenge,
-    input: { mobile?: string; email?: string },
-  ): boolean {
-    if (challenge.channel === 'email') {
-      return (
-        input.email?.trim().toLowerCase() === challenge.email?.toLowerCase()
+  private normalizeIdentifier(identifier: string): {
+    channel: CatalogOtpChannel;
+    destination: string;
+  } {
+    const value = identifier.trim();
+    if (value.includes('@')) {
+      throw new BadRequestException(
+        'Email sign-in uses a Firebase secure link',
       );
     }
 
-    return Boolean(input.mobile) && input.mobile?.trim() === challenge.mobile;
+    const compact = value.replace(/[\s()-]/g, '');
+    const mobile = compact.startsWith('+')
+      ? compact
+      : compact.startsWith('91') && compact.length === 12
+        ? `+${compact}`
+        : `+91${compact}`;
+    if (!/^\+[1-9]\d{7,14}$/.test(mobile)) {
+      throw new BadRequestException('Enter a valid mobile number');
+    }
+    return { channel: 'sms', destination: mobile };
   }
 
-  private getOtpContactKey(inquiry: CatalogOtpRequest): string {
-    if (inquiry.channel === 'email') {
-      const email = inquiry.email?.trim().toLowerCase();
+  private maskDestination(challenge: CatalogOtpChallenge): string {
+    if (challenge.email) {
+      const [local, domain] = challenge.email.split('@');
+      return `${local.slice(0, 1)}${'*'.repeat(Math.max(3, local.length - 1))}@${domain}`;
+    }
+    const mobile = challenge.mobile ?? '';
+    return `${mobile.slice(0, 3)} ${'*'.repeat(Math.max(4, mobile.length - 7))}${mobile.slice(-4)}`;
+  }
 
-      if (!email) {
-        throw new BadRequestException('email is required for email OTP');
+  private customerIdForIdentity(email?: string, mobile?: string): string {
+    return createHash('sha256')
+      .update(email ? `email:${email}` : `mobile:${mobile ?? ''}`)
+      .digest('hex')
+      .slice(0, 32);
+  }
+
+  private async findOrCreateCustomer(challenge: CatalogOtpChallenge): Promise<{
+    customer: CatalogCustomer;
+    isNewUser: boolean;
+  }> {
+    if (challenge.email) {
+      return this.findOrCreateEmailCustomer(challenge.email);
+    }
+
+    const customerId = this.customerIdForIdentity(
+      challenge.email,
+      challenge.mobile,
+    );
+    const existing =
+      this.customers.get(customerId) ??
+      (await this.loadPersistedCustomer(customerId));
+    if (existing) {
+      existing.lastLoginAt = new Date();
+      this.customers.set(customerId, existing);
+      await this.persistCustomer(existing);
+      return { customer: existing, isNewUser: false };
+    }
+
+    const now = new Date();
+    const customer: CatalogCustomer = {
+      customerId,
+      email: challenge.email,
+      mobile: challenge.mobile,
+      name: challenge.email?.split('@')[0] || 'Customer',
+      profileComplete: false,
+      createdAt: now,
+      lastLoginAt: now,
+    };
+    this.customers.set(customerId, customer);
+    await this.persistCustomer(customer);
+    return { customer, isNewUser: true };
+  }
+
+  private async findOrCreateEmailCustomer(email: string): Promise<{
+    customer: CatalogCustomer;
+    isNewUser: boolean;
+  }> {
+    const customerId = this.customerIdForIdentity(email);
+    const existing =
+      this.customers.get(customerId) ??
+      (await this.loadPersistedCustomer(customerId));
+    if (existing) {
+      existing.lastLoginAt = new Date();
+      this.customers.set(customerId, existing);
+      await this.persistCustomer(existing);
+      return { customer: existing, isNewUser: false };
+    }
+
+    const now = new Date();
+    const customer: CatalogCustomer = {
+      customerId,
+      email,
+      name: email.split('@')[0],
+      profileComplete: false,
+      createdAt: now,
+      lastLoginAt: now,
+    };
+    this.customers.set(customerId, customer);
+    await this.persistCustomer(customer);
+    return { customer, isNewUser: true };
+  }
+
+  private getOptionalFirestore(): Firestore | undefined {
+    if (
+      process.env.CATALOG_AUTH_STORE === 'memory' ||
+      process.env.NODE_ENV === 'test'
+    ) {
+      return undefined;
+    }
+    const databaseId = process.env.FIRESTORE_DATABASE_ID?.trim();
+    if (!databaseId) {
+      if (process.env.NODE_ENV === 'production') {
+        throw new ServiceUnavailableException(
+          'FIRESTORE_DATABASE_ID is required for catalog authentication',
+        );
       }
-
-      return `email:${email}`;
+      return undefined;
     }
+    this.firestore ??= new Firestore({ databaseId });
+    return this.firestore;
+  }
 
-    const mobile = inquiry.mobile?.trim();
+  private hashSessionToken(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
+  }
 
-    if (!mobile) {
-      throw new BadRequestException('mobile is required for WhatsApp OTP');
+  private async persistSession(
+    token: string,
+    session: CatalogAccessSession,
+  ): Promise<void> {
+    const firestore = this.getOptionalFirestore();
+    if (!firestore) return;
+    await firestore
+      .collection('catalog_access_sessions')
+      .doc(this.hashSessionToken(token))
+      .set({
+        customer_id: session.customerId,
+        auth_provider: session.authProvider,
+        email: session.email ?? null,
+        mobile: session.mobile ?? null,
+        name: session.name,
+        created_ip: session.createdIp,
+        user_agent: session.userAgent ?? null,
+        expires_at: Timestamp.fromDate(session.expiresAt),
+        created_at: Timestamp.now(),
+        revoked_at: null,
+      });
+  }
+
+  private async loadPersistedSession(
+    token: string,
+  ): Promise<CatalogAccessSession | undefined> {
+    const firestore = this.getOptionalFirestore();
+    if (!firestore) return undefined;
+    const snapshot = await firestore
+      .collection('catalog_access_sessions')
+      .doc(this.hashSessionToken(token))
+      .get();
+    const data = snapshot.data();
+    if (!snapshot.exists || !data || data.revoked_at) return undefined;
+    const session: CatalogAccessSession = {
+      customerId: String(data.customer_id),
+      authProvider: data.auth_provider as CatalogAuthProvider,
+      email: typeof data.email === 'string' ? data.email : undefined,
+      mobile: typeof data.mobile === 'string' ? data.mobile : undefined,
+      name: String(data.name),
+      createdIp: String(data.created_ip ?? ''),
+      userAgent:
+        typeof data.user_agent === 'string' ? data.user_agent : undefined,
+      expiresAt: this.dateFromFirestore(data.expires_at),
+    };
+    this.sessions.set(token, session);
+    return session;
+  }
+
+  private async persistCustomer(customer: CatalogCustomer): Promise<void> {
+    const firestore = this.getOptionalFirestore();
+    if (!firestore) return;
+    await firestore
+      .collection('catalog_customers')
+      .doc(customer.customerId)
+      .set(
+        {
+          email: customer.email ?? null,
+          mobile: customer.mobile ?? null,
+          name: customer.name,
+          profile_complete: customer.profileComplete,
+          created_at: Timestamp.fromDate(customer.createdAt),
+          last_login_at: Timestamp.fromDate(customer.lastLoginAt),
+          updated_at: Timestamp.now(),
+        },
+        { merge: true },
+      );
+  }
+
+  private async loadPersistedCustomer(
+    customerId: string,
+  ): Promise<CatalogCustomer | undefined> {
+    const firestore = this.getOptionalFirestore();
+    if (!firestore) return undefined;
+    const snapshot = await firestore
+      .collection('catalog_customers')
+      .doc(customerId)
+      .get();
+    const data = snapshot.data();
+    if (!snapshot.exists || !data) return undefined;
+    return {
+      customerId,
+      email: typeof data.email === 'string' ? data.email : undefined,
+      mobile: typeof data.mobile === 'string' ? data.mobile : undefined,
+      name: String(data.name ?? 'Customer'),
+      profileComplete: data.profile_complete === true,
+      createdAt: this.dateFromFirestore(data.created_at),
+      lastLoginAt: this.dateFromFirestore(data.last_login_at),
+    };
+  }
+
+  private async listPersistedCustomers(
+    firestore: Firestore,
+  ): Promise<CatalogCustomer[]> {
+    const snapshot = await firestore
+      .collection('catalog_customers')
+      .orderBy('last_login_at', 'desc')
+      .limit(500)
+      .get();
+
+    return snapshot.docs.map((document) => {
+      const data = document.data();
+      return {
+        customerId: document.id,
+        email: typeof data.email === 'string' ? data.email : undefined,
+        mobile: typeof data.mobile === 'string' ? data.mobile : undefined,
+        name: String(data.name ?? 'Customer'),
+        profileComplete: data.profile_complete === true,
+        createdAt: this.dateFromFirestore(data.created_at),
+        lastLoginAt: this.dateFromFirestore(data.last_login_at),
+      };
+    });
+  }
+
+  private async persistChallenge(
+    challenge: CatalogOtpChallenge,
+  ): Promise<void> {
+    const firestore = this.getOptionalFirestore();
+    if (!firestore) return;
+    await firestore
+      .collection('catalog_otp_challenges')
+      .doc(challenge.challengeId)
+      .set({
+        channel: challenge.channel,
+        contact_key: challenge.contactKey,
+        email: challenge.email ?? null,
+        mobile: challenge.mobile ?? null,
+        hashed_otp: challenge.hashedOtp,
+        attempts: challenge.attempts,
+        resend_count: challenge.resendCount,
+        expires_at: Timestamp.fromDate(challenge.expiresAt),
+        locked_at: challenge.lockedAt
+          ? Timestamp.fromDate(challenge.lockedAt)
+          : null,
+        last_sent_at: Timestamp.fromDate(challenge.lastSentAt),
+        created_ip: challenge.createdIp,
+        user_agent: challenge.userAgent ?? null,
+        created_at: Timestamp.fromDate(challenge.createdAt),
+      });
+  }
+
+  private async loadPersistedChallenge(
+    challengeId: string,
+  ): Promise<CatalogOtpChallenge | undefined> {
+    const firestore = this.getOptionalFirestore();
+    if (!firestore) return undefined;
+    const snapshot = await firestore
+      .collection('catalog_otp_challenges')
+      .doc(challengeId)
+      .get();
+    const data = snapshot.data();
+    if (!snapshot.exists || !data) return undefined;
+    const challenge: CatalogOtpChallenge = {
+      challengeId,
+      channel: data.channel as CatalogOtpChannel,
+      contactKey: String(data.contact_key),
+      email: typeof data.email === 'string' ? data.email : undefined,
+      mobile: typeof data.mobile === 'string' ? data.mobile : undefined,
+      hashedOtp: String(data.hashed_otp),
+      attempts: Number(data.attempts ?? 0),
+      resendCount: Number(data.resend_count ?? 0),
+      expiresAt: this.dateFromFirestore(data.expires_at),
+      lockedAt: data.locked_at
+        ? this.dateFromFirestore(data.locked_at)
+        : undefined,
+      lastSentAt: this.dateFromFirestore(data.last_sent_at),
+      createdIp: String(data.created_ip ?? ''),
+      userAgent:
+        typeof data.user_agent === 'string' ? data.user_agent : undefined,
+      createdAt: this.dateFromFirestore(data.created_at),
+    };
+    this.otpChallenges.set(challengeId, challenge);
+    return challenge;
+  }
+
+  private async deletePersistedChallenge(challengeId: string): Promise<void> {
+    const firestore = this.getOptionalFirestore();
+    if (!firestore) return;
+    await firestore
+      .collection('catalog_otp_challenges')
+      .doc(challengeId)
+      .delete();
+  }
+
+  private async persistEmailLinkChallenge(
+    challenge: CatalogEmailLinkChallenge,
+  ): Promise<void> {
+    const firestore = this.getOptionalFirestore();
+    if (!firestore) return;
+    await firestore
+      .collection('catalog_email_link_challenges')
+      .doc(challenge.challengeId)
+      .set({
+        email: challenge.email,
+        hashed_link_token: challenge.hashedLinkToken,
+        hashed_claim_token: challenge.hashedClaimToken,
+        expires_at: Timestamp.fromDate(challenge.expiresAt),
+        created_at: Timestamp.fromDate(challenge.createdAt),
+        completed_at: challenge.completedAt
+          ? Timestamp.fromDate(challenge.completedAt)
+          : null,
+        customer_id: challenge.customerId ?? null,
+        customer_name: challenge.customerName ?? null,
+        is_new_user: challenge.isNewUser ?? null,
+        profile_complete: challenge.profileComplete ?? null,
+      });
+  }
+
+  private async loadPersistedEmailLinkChallenge(
+    challengeId: string,
+  ): Promise<CatalogEmailLinkChallenge | undefined> {
+    const firestore = this.getOptionalFirestore();
+    if (!firestore) return undefined;
+    const snapshot = await firestore
+      .collection('catalog_email_link_challenges')
+      .doc(challengeId)
+      .get();
+    const data = snapshot.data();
+    if (!snapshot.exists || !data) return undefined;
+    const challenge: CatalogEmailLinkChallenge = {
+      challengeId,
+      email: String(data.email),
+      hashedLinkToken: String(data.hashed_link_token),
+      hashedClaimToken: String(data.hashed_claim_token),
+      expiresAt: this.dateFromFirestore(data.expires_at),
+      createdAt: this.dateFromFirestore(data.created_at),
+      completedAt: data.completed_at
+        ? this.dateFromFirestore(data.completed_at)
+        : undefined,
+      customerId:
+        typeof data.customer_id === 'string' ? data.customer_id : undefined,
+      customerName:
+        typeof data.customer_name === 'string' ? data.customer_name : undefined,
+      isNewUser:
+        typeof data.is_new_user === 'boolean' ? data.is_new_user : undefined,
+      profileComplete:
+        typeof data.profile_complete === 'boolean'
+          ? data.profile_complete
+          : undefined,
+    };
+    this.emailLinkChallenges.set(challengeId, challenge);
+    return challenge;
+  }
+
+  private dateFromFirestore(value: unknown): Date {
+    if (value instanceof Timestamp) return value.toDate();
+    if (value instanceof Date) return value;
+    return new Date(String(value));
+  }
+
+  private async verifyDeliveredOtp(
+    challenge: CatalogOtpChallenge,
+    code: string,
+  ): Promise<boolean> {
+    if (this.getOtpProvider() === 'twilio') {
+      return this.verifyTwilioOtp(challenge, code);
     }
-
-    return `whatsapp:${mobile}`;
+    return this.isOtpMatch(challenge, code);
   }
 
   private async sendOtp(
@@ -450,12 +1150,73 @@ export class CatalogAccessService {
       );
     }
 
+    if (this.getOtpProvider() === 'twilio') {
+      await this.sendTwilioOtp(challenge);
+      return;
+    }
+
     if (challenge.channel === 'email') {
       await this.sendEmailOtp(challenge.email!, otp);
       return;
     }
 
-    await this.sendWhatsappOtp(challenge.mobile!, otp);
+    this.logger.log(
+      `Development catalog SMS OTP for ${challenge.mobile}: ${otp}`,
+    );
+  }
+
+  private async sendTwilioOtp(challenge: CatalogOtpChallenge): Promise<void> {
+    const serviceSid = this.getRequiredEnv('TWILIO_VERIFY_SERVICE_SID');
+    const response = await fetch(
+      `https://verify.twilio.com/v2/Services/${encodeURIComponent(serviceSid)}/Verifications`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Basic ${this.getTwilioBasicAuth()}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          To: challenge.email ?? challenge.mobile ?? '',
+          Channel: challenge.channel,
+        }),
+      },
+    );
+    await this.assertOkResponse(response, 'OTP delivery failed');
+  }
+
+  private async verifyTwilioOtp(
+    challenge: CatalogOtpChallenge,
+    code: string,
+  ): Promise<boolean> {
+    const serviceSid = this.getRequiredEnv('TWILIO_VERIFY_SERVICE_SID');
+    const response = await fetch(
+      `https://verify.twilio.com/v2/Services/${encodeURIComponent(serviceSid)}/VerificationCheck`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Basic ${this.getTwilioBasicAuth()}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          To: challenge.email ?? challenge.mobile ?? '',
+          Code: code,
+        }),
+      },
+    );
+    if (response.status >= 500) {
+      throw new ServiceUnavailableException(
+        'OTP verification is temporarily unavailable',
+      );
+    }
+    if (!response.ok) return false;
+    const result = (await response.json()) as { status?: string };
+    return result.status === 'approved';
+  }
+
+  private getTwilioBasicAuth(): string {
+    const accountSid = this.getRequiredEnv('TWILIO_ACCOUNT_SID');
+    const authToken = this.getRequiredEnv('TWILIO_AUTH_TOKEN');
+    return Buffer.from(`${accountSid}:${authToken}`).toString('base64');
   }
 
   private async sendEmailOtp(email: string, otp: string): Promise<void> {
@@ -708,7 +1469,18 @@ export class CatalogAccessService {
   }
 
   private getOtpAuthProvider(channel: CatalogOtpChannel): CatalogAuthProvider {
-    return channel === 'email' ? 'email_otp' : 'whatsapp_otp';
+    return channel === 'email' ? 'email_otp' : 'sms_otp';
+  }
+
+  private getOtpProvider(): 'twilio' | 'local' {
+    const provider = process.env.CATALOG_OTP_PROVIDER?.trim().toLowerCase();
+    if (provider === 'twilio') return 'twilio';
+    if (process.env.NODE_ENV === 'production') {
+      throw new ServiceUnavailableException(
+        'CATALOG_OTP_PROVIDER=twilio is required',
+      );
+    }
+    return 'local';
   }
 
   private getGoogleClientIds(): string[] {

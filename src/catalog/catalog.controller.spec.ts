@@ -8,6 +8,8 @@ import { CatalogOriginGuard } from './catalog-origin.guard';
 import { CatalogRateLimiterService } from './catalog-rate-limiter.service';
 import { CatalogService } from './catalog.service';
 import { CatalogOtpRequestDto } from './dto/catalog-otp-request.dto';
+import { RecaptchaEnterpriseService } from '../message/recaptcha-enterprise.service';
+import { MessageRateLimiterService } from '../message/message-rate-limiter.service';
 
 describe('CatalogController', () => {
   const originalOtpDeliveryEnabled = process.env.CATALOG_OTP_DELIVERY_ENABLED;
@@ -42,6 +44,14 @@ describe('CatalogController', () => {
         CatalogAccessGuard,
         CatalogRateLimiterService,
         CatalogOriginGuard,
+        {
+          provide: RecaptchaEnterpriseService,
+          useValue: { verify: jest.fn().mockResolvedValue(undefined) },
+        },
+        {
+          provide: MessageRateLimiterService,
+          useValue: { assertAllowed: jest.fn().mockResolvedValue(undefined) },
+        },
         {
           provide: CatalogService,
           useValue: catalogService,
@@ -153,55 +163,120 @@ describe('CatalogController', () => {
     expect(reply.redirect).not.toHaveBeenCalled();
   });
 
-  it('rejects wrong WhatsApp OTP verification without setting the access cookie', async () => {
+  it('rejects wrong SMS OTP verification without setting the access cookie', async () => {
     const otpRequest = await controller.requestAccessOtp(
-      { name: 'Customer', mobile: '9999999999', channel: 'whatsapp' },
+      { identifier: '9999999999' },
       createRequest(),
       createReply() as unknown as FastifyReply,
     );
     const reply = createReply();
     const challengeId = getChallengeId(otpRequest);
 
-    expect(() =>
+    await expect(
       controller.verifyAccessOtp(
         {
           challenge_id: challengeId,
-          mobile: '9999999999',
-          otp: '000000',
+          code: '000000',
         },
         createRequest(),
         reply as unknown as FastifyReply,
       ),
-    ).toThrow('Invalid OTP');
+    ).rejects.toThrow('Invalid OTP');
     expect(reply.header).not.toHaveBeenCalled();
   });
 
-  it('sets the access cookie for verified email OTP', async () => {
-    const otpRequest = await controller.requestAccessOtp(
-      {
-        name: 'Customer',
+  it('sets the access cookie for a verified Firebase email link', async () => {
+    jest
+      .spyOn(catalogAccessService, 'createFirebaseEmailAccess')
+      .mockResolvedValue({
+        token: 'firebase-session-token',
+        expiresAt: new Date('2026-07-19T00:00:00.000Z'),
+        authProvider: 'firebase_email_link',
+        customerId: 'customer-id',
         email: 'customer@example.com',
-        channel: 'email',
-      },
-      createRequest(),
-      createReply() as unknown as FastifyReply,
-    );
+        name: 'customer',
+        isNewUser: true,
+        profileComplete: false,
+      });
     const reply = createReply();
-    const challengeId = getChallengeId(otpRequest);
 
-    const response = controller.verifyAccessOtp(
-      {
-        challenge_id: challengeId,
-        email: 'customer@example.com',
-        otp: '654321',
-      },
+    const response = await controller.createFirebaseEmailAccess(
+      { id_token: 'firebase-id-token' },
       createRequest(),
       reply as unknown as FastifyReply,
     );
 
     expect(response.ok).toBe(true);
-    expect(typeof response.expires_at).toBe('string');
-    expect(reply.header.mock.calls[0]?.[1]).toContain('catalog_access=');
+    expect(response.auth_provider).toBe('firebase_email_link');
+    expect(reply.header.mock.calls[0]?.[1]).toContain(
+      'catalog_access=firebase-session-token',
+    );
+  });
+
+  it('creates and claims a cross-device Firebase email-link handoff', async () => {
+    jest
+      .spyOn(catalogAccessService, 'requestFirebaseEmailLink')
+      .mockResolvedValue({
+        challenge_id: 'email-challenge',
+        link_token: 'link-token',
+        claim_token: 'claim-token',
+        expires_at: '2026-07-19T00:00:00.000Z',
+      });
+
+    await expect(
+      controller.requestFirebaseEmailLink(
+        { email: 'Customer@Example.com' },
+        createRequest(),
+      ),
+    ).resolves.toMatchObject({ challenge_id: 'email-challenge' });
+
+    jest
+      .spyOn(catalogAccessService, 'claimFirebaseEmailLink')
+      .mockResolvedValue({
+        token: 'claimed-session-token',
+        expiresAt: new Date('2026-07-19T00:00:00.000Z'),
+        authProvider: 'firebase_email_link',
+        customerId: 'customer-id',
+        email: 'customer@example.com',
+        name: 'customer',
+      });
+    const reply = createReply();
+    const response = await controller.claimFirebaseEmailLink(
+      { challenge_id: 'email-challenge', claim_token: 'claim-token' },
+      createRequest(),
+      reply as unknown as FastifyReply,
+    );
+
+    expect(response.status).toBe('complete');
+    expect(reply.header.mock.calls[0]?.[1]).toContain(
+      'catalog_access=claimed-session-token',
+    );
+  });
+
+  it('resends an active OTP after the cooldown', async () => {
+    const otpRequest = await controller.requestAccessOtp(
+      { identifier: '9999999999' },
+      createRequest(),
+      createReply() as unknown as FastifyReply,
+    );
+    const challengeId = getChallengeId(otpRequest);
+    const challenges = (
+      catalogAccessService as unknown as {
+        otpChallenges: Map<string, { lastSentAt: Date }>;
+      }
+    ).otpChallenges;
+    challenges.get(challengeId)!.lastSentAt = new Date(0);
+
+    await expect(
+      controller.resendAccessOtp(
+        { challenge_id: challengeId },
+        createRequest(),
+      ),
+    ).resolves.toMatchObject({
+      challenge_id: challengeId,
+      channel: 'sms',
+      masked_destination: '+91 ******9999',
+    });
   });
 
   it('invokes OTP delivery for each new challenge', async () => {
@@ -216,9 +291,7 @@ describe('CatalogController', () => {
 
     await controller.requestAccessOtp(
       {
-        name: 'Customer',
-        email: 'customer@example.com',
-        channel: 'email',
+        identifier: '9999999999',
       },
       createRequest(),
       createReply() as unknown as FastifyReply,
@@ -226,40 +299,26 @@ describe('CatalogController', () => {
 
     expect(sendOtp).toHaveBeenCalledWith(
       expect.objectContaining({
-        channel: 'email',
-        email: 'customer@example.com',
+        channel: 'sms',
+        mobile: '+919999999999',
       }),
       '654321',
     );
   });
 
-  it('rejects contact-mismatched OTP challenges', async () => {
-    const otpRequest = await controller.requestAccessOtp(
-      {
-        name: 'Customer',
-        email: 'customer@example.com',
-        channel: 'email',
-      },
-      createRequest(),
-      createReply() as unknown as FastifyReply,
-    );
-
-    expect(() =>
+  it('rejects an unknown OTP challenge', async () => {
+    await expect(
       controller.verifyAccessOtp(
-        {
-          challenge_id: getChallengeId(otpRequest),
-          email: 'other@example.com',
-          otp: '654321',
-        },
+        { challenge_id: 'unknown-challenge', code: '654321' },
         createRequest(),
         createReply() as unknown as FastifyReply,
       ),
-    ).toThrow('Invalid OTP challenge');
+    ).rejects.toThrow('Invalid OTP challenge');
   });
 
   it('rejects expired OTP challenges', async () => {
     const otpRequest = await controller.requestAccessOtp(
-      { name: 'Customer', mobile: '9999999999', channel: 'whatsapp' },
+      { identifier: '9999999999' },
       createRequest(),
       createReply() as unknown as FastifyReply,
     );
@@ -274,17 +333,16 @@ describe('CatalogController', () => {
     expect(challenge).toBeDefined();
     challenge!.expiresAt = new Date(0);
 
-    expect(() =>
+    await expect(
       controller.verifyAccessOtp(
         {
           challenge_id: challengeId,
-          mobile: '9999999999',
-          otp: '654321',
+          code: '654321',
         },
         createRequest(),
         createReply() as unknown as FastifyReply,
       ),
-    ).toThrow('OTP challenge has expired');
+    ).rejects.toThrow('OTP challenge has expired');
   });
 
   it('locks OTP challenges after the configured maximum attempts', async () => {
@@ -293,7 +351,7 @@ describe('CatalogController', () => {
 
     try {
       const otpRequest = await controller.requestAccessOtp(
-        { name: 'Customer', mobile: '9999999999', channel: 'whatsapp' },
+        { identifier: '9999999999' },
         createRequest(),
         createReply() as unknown as FastifyReply,
       );
@@ -302,26 +360,24 @@ describe('CatalogController', () => {
         controller.verifyAccessOtp(
           {
             challenge_id: challengeId,
-            mobile: '9999999999',
-            otp: '000000',
+            code: '000000',
           },
           createRequest(),
           createReply() as unknown as FastifyReply,
         );
 
-      expect(verifyWrongOtp).toThrow('Invalid OTP');
-      expect(verifyWrongOtp).toThrow('OTP challenge is locked');
-      expect(() =>
+      await expect(verifyWrongOtp()).rejects.toThrow('Invalid OTP');
+      await expect(verifyWrongOtp()).rejects.toThrow('OTP challenge is locked');
+      await expect(
         controller.verifyAccessOtp(
           {
             challenge_id: challengeId,
-            mobile: '9999999999',
-            otp: '654321',
+            code: '654321',
           },
           createRequest(),
           createReply() as unknown as FastifyReply,
         ),
-      ).toThrow('OTP challenge is locked');
+      ).rejects.toThrow('OTP challenge is locked');
     } finally {
       if (previousMaxAttempts === undefined) {
         delete process.env.CATALOG_OTP_MAX_ATTEMPTS;
@@ -333,47 +389,45 @@ describe('CatalogController', () => {
 
   it('rejects replay of a verified OTP challenge', async () => {
     const otpRequest = await controller.requestAccessOtp(
-      { name: 'Customer', mobile: '9999999999', channel: 'whatsapp' },
+      { identifier: '9999999999' },
       createRequest(),
       createReply() as unknown as FastifyReply,
     );
     const challengeId = getChallengeId(otpRequest);
     const verification = {
       challenge_id: challengeId,
-      mobile: '9999999999',
-      otp: '654321',
+      code: '654321',
     };
 
-    expect(
-      controller.verifyAccessOtp(
-        verification,
-        createRequest(),
-        createReply() as unknown as FastifyReply,
-      ).ok,
-    ).toBe(true);
-    expect(() =>
+    await expect(
       controller.verifyAccessOtp(
         verification,
         createRequest(),
         createReply() as unknown as FastifyReply,
       ),
-    ).toThrow('Invalid OTP challenge');
+    ).resolves.toMatchObject({ ok: true, is_new_user: true });
+    await expect(
+      controller.verifyAccessOtp(
+        verification,
+        createRequest(),
+        createReply() as unknown as FastifyReply,
+      ),
+    ).rejects.toThrow('Invalid OTP challenge');
   });
 
   it('returns the current access session for a valid access cookie', async () => {
     const otpRequest = await controller.requestAccessOtp(
-      { name: 'Customer', mobile: '9999999999', channel: 'whatsapp' },
+      { identifier: '9999999999' },
       createRequest(),
       createReply() as unknown as FastifyReply,
     );
     const reply = createReply();
     const challengeId = getChallengeId(otpRequest);
 
-    controller.verifyAccessOtp(
+    await controller.verifyAccessOtp(
       {
         challenge_id: challengeId,
-        mobile: '9999999999',
-        otp: '654321',
+        code: '654321',
       },
       createRequest(),
       reply as unknown as FastifyReply,
@@ -381,27 +435,27 @@ describe('CatalogController', () => {
 
     const cookie = reply.header.mock.calls[0]?.[1] ?? '';
 
-    const session = controller.getAccessMe(createRequest(cookie));
+    const session = await controller.getAccessMe(createRequest(cookie));
 
     expect(session).toMatchObject({
       ok: true,
-      auth_provider: 'whatsapp_otp',
-      mobile: '9999999999',
+      auth_provider: 'sms_otp',
+      mobile: '+919999999999',
       name: 'Customer',
     });
     expect(typeof session.expires_at).toBe('string');
   });
 
-  it('rejects current access session lookup without the access cookie', () => {
-    expect(() => controller.getAccessMe(createRequest())).toThrow(
+  it('rejects current access session lookup without the access cookie', async () => {
+    await expect(controller.getAccessMe(createRequest())).rejects.toThrow(
       'Catalog access is required',
     );
   });
 
-  it('rejects signed URL access without the catalog access cookie', () => {
-    expect(() =>
+  it('rejects signed URL access without the catalog access cookie', async () => {
+    await expect(
       catalogAccessGuard.canActivate(createContext(createRequest())),
-    ).toThrow('Catalog access is required');
+    ).rejects.toThrow('Catalog access is required');
   });
 
   it('returns signed URL details for public slug-based access', async () => {
@@ -432,22 +486,21 @@ describe('CatalogController', () => {
 
   it('does not treat the former master OTP as a valid challenge code', async () => {
     const otpRequest = await controller.requestAccessOtp(
-      { name: 'Customer', mobile: '9999999999', channel: 'whatsapp' },
+      { identifier: '9999999999' },
       createRequest(),
       createReply() as unknown as FastifyReply,
     );
 
-    expect(() =>
+    await expect(
       controller.verifyAccessOtp(
         {
           challenge_id: getChallengeId(otpRequest),
-          mobile: '9999999999',
-          otp: '190399',
+          code: '190399',
         },
         createRequest(),
         createReply() as unknown as FastifyReply,
       ),
-    ).toThrow('Invalid OTP');
+    ).rejects.toThrow('Invalid OTP');
   });
 
   it('rejects an OTP supplied to the request-otp payload', async () => {
@@ -460,10 +513,8 @@ describe('CatalogController', () => {
     await expect(
       pipe.transform(
         {
-          name: 'Customer',
-          mobile: '9999999999',
-          channel: 'whatsapp',
-          otp: '190399',
+          identifier: '9999999999',
+          code: '190399',
         },
         { type: 'body', metatype: CatalogOtpRequestDto },
       ),
@@ -472,16 +523,15 @@ describe('CatalogController', () => {
 
   it('revokes and clears the current catalog access session', async () => {
     const otpRequest = await controller.requestAccessOtp(
-      { name: 'Customer', mobile: '9999999999', channel: 'whatsapp' },
+      { identifier: '9999999999' },
       createRequest(),
       createReply() as unknown as FastifyReply,
     );
     const sessionReply = createReply();
-    controller.verifyAccessOtp(
+    await controller.verifyAccessOtp(
       {
         challenge_id: getChallengeId(otpRequest),
-        mobile: '9999999999',
-        otp: '654321',
+        code: '654321',
       },
       createRequest(),
       sessionReply as unknown as FastifyReply,
@@ -489,16 +539,16 @@ describe('CatalogController', () => {
     const cookie = sessionReply.header.mock.calls[0]?.[1] ?? '';
     const logoutReply = createReply();
 
-    expect(
+    await expect(
       controller.logoutAccess(
         createRequest(cookie),
         logoutReply as unknown as FastifyReply,
       ),
-    ).toEqual({ ok: true });
+    ).resolves.toEqual({ ok: true });
     expect(logoutReply.header.mock.calls[0]?.[1]).toContain('Max-Age=0');
-    expect(() =>
+    await expect(
       catalogAccessGuard.canActivate(createContext(createRequest(cookie))),
-    ).toThrow('Catalog access is required');
+    ).rejects.toThrow('Catalog access is required');
   });
 
   function createRequest(cookie?: string, origin?: string): FastifyRequest {

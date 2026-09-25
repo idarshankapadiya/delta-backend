@@ -13,11 +13,14 @@ export const catalogAccessCookieName = 'catalog_access';
 export class CatalogAccessGuard implements CanActivate {
   constructor(private readonly catalogAccessService: CatalogAccessService) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<FastifyRequest>();
     const token = request.cookies?.[catalogAccessCookieName];
 
-    if (!token || !this.catalogAccessService.validateAccessToken(token)) {
+    if (
+      !token ||
+      !(await this.catalogAccessService.validateAccessToken(token))
+    ) {
       throw new UnauthorizedException('Catalog access is required');
     }
 

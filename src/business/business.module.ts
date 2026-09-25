@@ -11,14 +11,19 @@ import { CatalogModule } from '../catalog/catalog.module';
 import { MessageModule } from '../message/message.module';
 import { ProductModule } from '../product/product.module';
 import { BusinessProductController } from './business-product.controller';
+import { QuotationModule } from '../quotation/quotation.module';
+import { BusinessQuotationController } from './business-quotation.controller';
+import { BusinessUserController } from './business-user.controller';
 
 @Module({
-  imports: [CatalogModule, MessageModule, ProductModule],
+  imports: [CatalogModule, MessageModule, ProductModule, QuotationModule],
   controllers: [
     BusinessAuthController,
     BusinessCatalogController,
     BusinessMessageController,
     BusinessProductController,
+    BusinessQuotationController,
+    BusinessUserController,
   ],
   providers: [
     BusinessAuthGuard,

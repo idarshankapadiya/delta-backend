@@ -49,7 +49,7 @@ describe('AppController (e2e)', () => {
             }),
             expect.objectContaining({
               method: 'POST',
-              path: '/api/catalog/access/request-otp',
+              path: '/api/catalog/access/otp/request',
             }),
             expect.objectContaining({
               method: 'GET',
@@ -58,6 +58,10 @@ describe('AppController (e2e)', () => {
             expect.objectContaining({
               method: 'DELETE',
               path: '/api/business/messages/:message_id',
+            }),
+            expect.objectContaining({
+              method: 'POST',
+              path: '/api/quotation-requests',
             }),
             expect.objectContaining({
               method: 'POST/PUT/DELETE',
@@ -80,7 +84,7 @@ describe('AppController (e2e)', () => {
       .expect('Content-Type', /application\/json/);
     const document = jsonResponse.body as OpenAPIObject;
     expect(document.openapi).toBe('3.0.0');
-    expect(Object.keys(document.paths)).toHaveLength(44);
+    expect(Object.keys(document.paths)).toHaveLength(51);
     const specificationPath =
       document.paths['/api/business/products/{productId}/specifications/{key}'];
     expect(specificationPath?.put).toBeDefined();
@@ -115,15 +119,19 @@ describe('AppController (e2e)', () => {
       ['GET', '/api/categories'],
       ['GET', '/api/products'],
       ['GET', '/api/products/:productId'],
+      ['POST', '/api/products/cart-validation'],
+      ['POST', '/api/quotation-requests'],
       ['POST', '/api/message'],
       ['GET', '/api/catalog/all'],
       ['POST', '/api/catalog/library'],
       ['POST', '/api/catalog/access'],
       ['POST', '/api/catalog/access/google'],
       ['POST', '/api/catalog/access/google/redirect'],
+      ['POST', '/api/catalog/access/firebase/email-link'],
       ['GET', '/api/catalog/access/me'],
-      ['POST', '/api/catalog/access/request-otp'],
-      ['POST', '/api/catalog/access/verify-otp'],
+      ['POST', '/api/catalog/access/otp/request'],
+      ['POST', '/api/catalog/access/otp/verify'],
+      ['POST', '/api/catalog/access/otp/resend'],
       ['POST', '/api/catalog/documents/access'],
       ['POST', '/api/catalog/access/logout'],
       ['POST', '/api/business/auth/google'],
@@ -156,6 +164,9 @@ describe('AppController (e2e)', () => {
       ['DELETE', '/api/business/catalog/documents/:document_id'],
       ['GET', '/api/business/messages'],
       ['DELETE', '/api/business/messages/:message_id'],
+      ['GET', '/api/business/quotation-requests'],
+      ['GET', '/api/business/quotation-requests/:quotationId'],
+      ['PATCH', '/api/business/quotation-requests/:quotationId/status'],
       ['GET', '/api/internal/messages'],
       ['POST', '/api/internal/catalog/documents'],
       ['PUT', '/api/internal/catalog/documents/:document_id'],

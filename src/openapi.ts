@@ -20,6 +20,7 @@ function createOpenApiConfig() {
     .addTag('Products', 'Public product discovery endpoints.')
     .addTag('Catalog', 'Public catalog and access endpoints.')
     .addTag('Contact Messages', 'Public contact form submission.')
+    .addTag('Quotations', 'Public cart validation and quotation submission.')
     .addTag(
       'Business Authentication',
       'Business dashboard authentication and session endpoints.',
@@ -27,6 +28,10 @@ function createOpenApiConfig() {
     .addTag('Business Products', 'Authenticated product administration.')
     .addTag('Business Catalog', 'Authenticated catalog administration.')
     .addTag('Business Messages', 'Authenticated contact message management.')
+    .addTag(
+      'Business Quotations',
+      'Authenticated quotation workflow management.',
+    )
     .addTag('Internal Catalog', 'Service-to-service catalog administration.')
     .addTag('Internal Messages', 'Service-to-service message access.')
     .addCookieAuth(

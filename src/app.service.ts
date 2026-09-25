@@ -66,6 +66,20 @@ export class AppService {
         },
         {
           method: 'POST',
+          path: '/api/products/cart-validation',
+          description:
+            'Validate cart products, requested quantities, current prices, and availability.',
+          auth: 'public-site origin',
+        },
+        {
+          method: 'POST',
+          path: '/api/quotation-requests',
+          description:
+            'Revalidate a cart and create a structured quotation request.',
+          auth: 'public-site origin, reCAPTCHA Enterprise, and rate limits',
+        },
+        {
+          method: 'POST',
           path: '/api/message',
           description: 'Create a contact form message in Firestore.',
           auth: 'public-site origin, reCAPTCHA Enterprise, and rate limits',
@@ -100,6 +114,13 @@ export class AppService {
           path: '/api/business/messages/:message_id',
           description: 'Delete one contact message.',
           auth: 'business session and X-CSRF-Token',
+        },
+        {
+          method: 'GET/PATCH',
+          path: '/api/business/quotation-requests/**',
+          description:
+            'Review quotation requests and update their workflow status.',
+          auth: 'business session; status updates also require X-CSRF-Token',
         },
         {
           method: 'GET',
@@ -191,6 +212,13 @@ export class AppService {
           auth: 'Google Identity Services credential form post',
         },
         {
+          method: 'POST',
+          path: '/api/catalog/access/firebase/email-link',
+          description:
+            'Verify a Firebase email-link ID token and set catalog_access.',
+          auth: 'allowed browser origin for browser requests',
+        },
+        {
           method: 'GET',
           path: '/api/catalog/access/me',
           description:
@@ -199,15 +227,22 @@ export class AppService {
         },
         {
           method: 'POST',
-          path: '/api/catalog/access/request-otp',
+          path: '/api/catalog/access/otp/request',
           description:
-            'Create an OTP challenge and deliver a one-time verification code.',
+            'Create an email or SMS OTP challenge for an identifier.',
           auth: 'allowed browser origin for browser requests',
         },
         {
           method: 'POST',
-          path: '/api/catalog/access/verify-otp',
-          description: 'Verify an OTP challenge and set catalog_access.',
+          path: '/api/catalog/access/otp/verify',
+          description:
+            'Verify an OTP, create or update the customer, and set catalog_access.',
+          auth: 'allowed browser origin for browser requests',
+        },
+        {
+          method: 'POST',
+          path: '/api/catalog/access/otp/resend',
+          description: 'Resend an active OTP challenge after its cooldown.',
           auth: 'allowed browser origin for browser requests',
         },
         {

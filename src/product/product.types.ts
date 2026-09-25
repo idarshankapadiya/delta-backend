@@ -37,6 +37,7 @@ export interface ProductListItem {
   currency: string;
   discountPercentage: number;
   inStock: boolean;
+  stockQuantity?: number;
   thumbnailUrl?: string;
 }
 

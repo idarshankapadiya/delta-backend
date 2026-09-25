@@ -24,16 +24,20 @@ import { CatalogAccessService } from './catalog-access.service';
 import { CatalogService } from './catalog.service';
 import { CatalogAccessDto } from './dto/catalog-access.dto';
 import { CatalogGoogleAccessDto } from './dto/catalog-google-access.dto';
+import { CatalogFirebaseAccessDto } from './dto/catalog-firebase-access.dto';
 import { CatalogGoogleRedirectDto } from './dto/catalog-google-redirect.dto';
 import { CatalogLibraryDto } from './dto/catalog-library.dto';
 import { CatalogOtpRequestDto } from './dto/catalog-otp-request.dto';
 import { CatalogVerifyOtpDto } from './dto/catalog-verify-otp.dto';
+import { CatalogResendOtpDto } from './dto/catalog-resend-otp.dto';
 import { DocumentAccessDto } from './dto/document-access.dto';
 import { CatalogRateLimiterService } from './catalog-rate-limiter.service';
 import { PublicSiteOriginGuard } from '../security/origin.guards';
 import { getPublicSiteOrigins } from '../config/origin.config';
 import { catalogAccessCookieName } from './catalog-access.guard';
 import { NoStoreInterceptor } from '../security/no-store.interceptor';
+import { RecaptchaEnterpriseService } from '../message/recaptcha-enterprise.service';
+import { MessageRateLimiterService } from '../message/message-rate-limiter.service';
 
 @Controller('catalog')
 @ApiTags('Catalog')
@@ -42,6 +46,8 @@ export class CatalogController {
     private readonly catalogService: CatalogService,
     private readonly catalogAccessService: CatalogAccessService,
     private readonly rateLimiter: CatalogRateLimiterService,
+    private readonly recaptcha: RecaptchaEnterpriseService,
+    private readonly distributedRateLimiter: MessageRateLimiterService,
   ) {}
 
   @Get('all')
@@ -107,9 +113,46 @@ export class CatalogController {
 
     return {
       ok: true,
+      customer_id: session.customerId,
       auth_provider: session.authProvider,
       email: session.email,
       name: session.name,
+      expires_at: session.expiresAt.toISOString(),
+    };
+  }
+
+  @Post('access/firebase/email-link')
+  @ApiOperation({ summary: 'Create catalog access from a Firebase email link' })
+  @UseGuards(PublicSiteOriginGuard)
+  @UseInterceptors(NoStoreInterceptor)
+  async createFirebaseEmailAccess(
+    @Body() body: CatalogFirebaseAccessDto,
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ) {
+    const ip = this.getClientIp(request);
+    this.rateLimiter.assertAllowed(
+      `catalog-firebase-email-access:${ip}`,
+      20,
+      60 * 60 * 1000,
+      'Too many email sign-in attempts',
+    );
+    const session = await this.catalogAccessService.createFirebaseEmailAccess(
+      body.id_token,
+      { ip, userAgent: this.getUserAgent(request) },
+    );
+    reply.header(
+      'Set-Cookie',
+      this.createAccessCookie(session.token, session.expiresAt),
+    );
+    return {
+      ok: true,
+      customer_id: session.customerId,
+      auth_provider: session.authProvider,
+      email: session.email,
+      name: session.name,
+      is_new_user: session.isNewUser,
+      profile_complete: session.profileComplete,
       expires_at: session.expiresAt.toISOString(),
     };
   }
@@ -159,14 +202,14 @@ export class CatalogController {
   @ApiOperation({ summary: 'Get the current catalog access session' })
   @UseGuards(PublicSiteOriginGuard)
   @UseInterceptors(NoStoreInterceptor)
-  getAccessMe(@Req() request: FastifyRequest) {
+  async getAccessMe(@Req() request: FastifyRequest) {
     const token = request.cookies?.[catalogAccessCookieName];
 
     if (!token) {
       throw new UnauthorizedException('Catalog access is required');
     }
 
-    const session = this.catalogAccessService.getAccessSession(token);
+    const session = await this.catalogAccessService.getAccessSession(token);
 
     if (!session) {
       throw new UnauthorizedException('Catalog access is required');
@@ -174,6 +217,7 @@ export class CatalogController {
 
     return {
       ok: true,
+      customer_id: session.customerId,
       auth_provider: session.authProvider,
       email: session.email,
       mobile: session.mobile,
@@ -182,7 +226,7 @@ export class CatalogController {
     };
   }
 
-  @Post('access/request-otp')
+  @Post('access/otp/request')
   @ApiOperation({ summary: 'Request a catalog access OTP' })
   @UseGuards(PublicSiteOriginGuard)
   @UseInterceptors(NoStoreInterceptor)
@@ -193,26 +237,35 @@ export class CatalogController {
   ) {
     void reply;
     const ip = this.getClientIp(request);
-    const contactKey =
-      body.channel === 'email'
-        ? body.email?.trim().toLowerCase()
-        : body.mobile?.trim();
+    const contactKey = body.identifier.trim().toLowerCase();
 
-    this.rateLimiter.assertAllowed(
-      `catalog-otp-request:${body.channel}:${ip}`,
+    await this.distributedRateLimiter.assertAllowed(
+      `catalog-otp-request-ip:${ip}`,
+      5,
+      60 * 60 * 1000,
+      'Too many OTP requests',
+    );
+    await this.recaptcha.verify(body.captcha_token, 'catalog_otp_request', ip);
+    await this.distributedRateLimiter.assertAllowed(
+      `catalog-otp-request-contact:${contactKey}`,
       5,
       60 * 60 * 1000,
       'Too many OTP requests',
     );
 
-    if (contactKey) {
-      this.rateLimiter.assertAllowed(
-        `catalog-otp-contact:${body.channel}:${contactKey}`,
-        5,
-        60 * 60 * 1000,
-        'Too many OTP requests',
-      );
-    }
+    this.rateLimiter.assertAllowed(
+      `catalog-otp-request:${ip}`,
+      5,
+      60 * 60 * 1000,
+      'Too many OTP requests',
+    );
+
+    this.rateLimiter.assertAllowed(
+      `catalog-otp-contact:${contactKey}`,
+      5,
+      60 * 60 * 1000,
+      'Too many OTP requests',
+    );
 
     return this.catalogAccessService.requestOtp(body, {
       ip,
@@ -220,11 +273,11 @@ export class CatalogController {
     });
   }
 
-  @Post('access/verify-otp')
+  @Post('access/otp/verify')
   @ApiOperation({ summary: 'Verify a catalog access OTP' })
   @UseGuards(PublicSiteOriginGuard)
   @UseInterceptors(NoStoreInterceptor)
-  verifyAccessOtp(
+  async verifyAccessOtp(
     @Body() body: CatalogVerifyOtpDto,
     @Req() request: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
@@ -237,7 +290,7 @@ export class CatalogController {
       'Too many OTP verification attempts',
     );
 
-    const session = this.catalogAccessService.verifyOtp(body, {
+    const session = await this.catalogAccessService.verifyOtp(body, {
       ip,
       userAgent: this.getUserAgent(request),
     });
@@ -248,8 +301,36 @@ export class CatalogController {
     );
     return {
       ok: true,
+      customer_id: session.customerId,
+      auth_provider: session.authProvider,
+      email: session.email,
+      mobile: session.mobile,
+      name: session.name,
+      is_new_user: session.isNewUser,
+      profile_complete: session.profileComplete,
       expires_at: session.expiresAt.toISOString(),
     };
+  }
+
+  @Post('access/otp/resend')
+  @ApiOperation({ summary: 'Resend a catalog access OTP' })
+  @UseGuards(PublicSiteOriginGuard)
+  @UseInterceptors(NoStoreInterceptor)
+  async resendAccessOtp(
+    @Body() body: CatalogResendOtpDto,
+    @Req() request: FastifyRequest,
+  ) {
+    const ip = this.getClientIp(request);
+    this.rateLimiter.assertAllowed(
+      `catalog-otp-resend:${ip}`,
+      10,
+      60 * 60 * 1000,
+      'Too many OTP resend requests',
+    );
+    return this.catalogAccessService.resendOtp(body.challenge_id, {
+      ip,
+      userAgent: this.getUserAgent(request),
+    });
   }
 
   @Post('documents/access')
@@ -298,11 +379,11 @@ export class CatalogController {
   @ApiOperation({ summary: 'Log out of catalog access' })
   @UseGuards(PublicSiteOriginGuard)
   @UseInterceptors(NoStoreInterceptor)
-  logoutAccess(
+  async logoutAccess(
     @Req() request: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
   ) {
-    this.catalogAccessService.revokeAccessSession(
+    await this.catalogAccessService.revokeAccessSession(
       request.cookies?.[catalogAccessCookieName],
     );
     reply.header('Set-Cookie', this.createClearedAccessCookie());

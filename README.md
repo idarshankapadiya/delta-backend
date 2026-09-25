@@ -65,6 +65,25 @@ npm run build
 Use `npm run lint:fix` to apply ESLint fixes. The regular `lint` command is
 read-only and is safe to use as a validation check.
 
+## Quotation requests
+
+Public cart validation and quotation submission use the product database and
+store immutable commercial snapshots in the `quotation_requests` Firestore
+collection. `QUOTATION_FIRESTORE_DATABASE_ID` can select a dedicated database;
+otherwise `FIRESTORE_DATABASE_ID` is used.
+
+Sales email notification is optional. Configure both variables to enable it:
+
+```dotenv
+QUOTATION_NOTIFICATION_EMAIL_TO=sales@example.com
+QUOTATION_EMAIL_FROM=website@example.com
+```
+
+Set `QUOTATION_SEND_CUSTOMER_ACKNOWLEDGEMENT=true` to also email the customer.
+The configured AWS region and SES credentials are shared with the existing SES
+integration. A notification failure is logged but does not discard a quotation
+that was already saved.
+
 ## Deployment commands
 
 The package provides:
@@ -119,7 +138,34 @@ It:
 - restricts ingress to internal and external load-balancer traffic;
 - disables the default `run.app` URL;
 - keeps the maximum instance count at one while public catalog sessions remain
-  process-local.
+  constrained by other process-local catalog limits. Customer accounts, OTP
+  challenges, and catalog sessions are persisted in Firestore.
+
+### Customer passwordless sign-in
+
+Email sign-in uses Firebase Authentication email links. The frontend completes
+the Firebase flow and sends its ID token to the backend, which verifies it with
+Firebase Admin before creating the `catalog_access` session. Enable
+**Email/Password** and **Email link (passwordless sign-in)** in Firebase
+Authentication, and authorize `darshanent.co.in`, `www.darshanent.co.in`, and
+the local development domain when needed.
+
+Mobile sign-in continues to use Twilio Verify SMS. Create these Secret Manager
+secrets and grant the backend runtime service access before running the
+user-service deployment manually:
+
+```text
+TWILIO_ACCOUNT_SID
+TWILIO_AUTH_TOKEN
+TWILIO_VERIFY_SERVICE_SID
+```
+
+The deployment script maps the SMS secrets and configures a 10-minute code,
+60-second resend cooldown, five verification attempts, Firebase ID-token
+verification, Firestore-backed customers/sessions/challenges, and reCAPTCHA Enterprise action
+`catalog_otp_request`. In local development, set
+`CATALOG_OTP_DELIVERY_ENABLED=true`; when `CATALOG_OTP_PROVIDER` is not
+`twilio`, generated codes are written to the backend development log only.
 
 Required shell variables:
 
@@ -196,13 +242,13 @@ As verified on 19 July 2026:
 
 ## Which deployment command should I run?
 
-| Change                                                            | Command                                                  |
-| ----------------------------------------------------------------- | -------------------------------------------------------- |
-| Public routes, business authentication, business catalog/messages | `npm run deploy:gcp:user`                                |
-| Internal Postman/operator routes only                             | `npm run deploy:gcp:admin`                               |
-| Shared services, dependencies, DTOs, catalog or message logic     | `npm run deploy:gcp`                                     |
-| Documentation/frontend-only change                                | Neither backend command                                  |
-| First production setup                                            | Complete the infrastructure runbook, then `deploy:gcp`   |
+| Change                                                            | Command                                                |
+| ----------------------------------------------------------------- | ------------------------------------------------------ |
+| Public routes, business authentication, business catalog/messages | `npm run deploy:gcp:user`                              |
+| Internal Postman/operator routes only                             | `npm run deploy:gcp:admin`                             |
+| Shared services, dependencies, DTOs, catalog or message logic     | `npm run deploy:gcp`                                   |
+| Documentation/frontend-only change                                | Neither backend command                                |
+| First production setup                                            | Complete the infrastructure runbook, then `deploy:gcp` |
 
 Deployments are independent. Updating `delta-backend` does not update
 `delta-backend-admin`, even though both use the same repository. The combined

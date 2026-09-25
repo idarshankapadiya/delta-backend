@@ -35,7 +35,7 @@ export class RecaptchaEnterpriseService {
     }
 
     if (!token?.trim()) {
-      throw new BadRequestException('Contact verification token is required');
+      throw new BadRequestException('Verification token is required');
     }
 
     if (
@@ -72,7 +72,7 @@ export class RecaptchaEnterpriseService {
     const minimumScore = this.getMinimumScore();
 
     if (!valid || !actionMatches || score < minimumScore) {
-      throw new ForbiddenException('Contact verification failed');
+      throw new ForbiddenException('Verification failed');
     }
   }
 

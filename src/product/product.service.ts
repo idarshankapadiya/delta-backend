@@ -243,6 +243,35 @@ export class ProductService {
     };
   }
 
+  async getProductsForCart(productIds: string[]): Promise<{
+    products: ProductListItem[];
+    missingProductIds: string[];
+  }> {
+    const uniqueProductIds = [...new Set(productIds)];
+    const references = uniqueProductIds.map((productId) =>
+      this.getFirestore().collection('products').doc(productId),
+    );
+    const documents = await this.getFirestore().getAll(...references);
+    const products: ProductListItem[] = [];
+    const missingProductIds: string[] = [];
+
+    await Promise.all(
+      documents.map(async (document, index) => {
+        const requestedId = uniqueProductIds[index];
+        const record = document.data() as Record<string, unknown> | undefined;
+
+        if (!requestedId || !document.exists || record?.active !== true) {
+          if (requestedId) missingProductIds.push(requestedId);
+          return;
+        }
+
+        products.push(await this.toProductListItem(document.id, record));
+      }),
+    );
+
+    return { products, missingProductIds };
+  }
+
   private async toProductListItem(
     documentId: string,
     record: Record<string, unknown>,
@@ -276,6 +305,7 @@ export class ProductService {
       currency: this.stringValue(record.currency) || 'INR',
       discountPercentage: this.numberValue(record.discountPercentage),
       inStock: record.inStock === true,
+      ...this.optionalNumber('stockQuantity', record.stockQuantity),
       ...(thumbnailUrl ? { thumbnailUrl } : {}),
     };
   }
@@ -491,6 +521,15 @@ export class ProductService {
 
   private numberValue(value: unknown): number {
     return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+  }
+
+  private optionalNumber<Key extends string>(
+    key: Key,
+    value: unknown,
+  ): { [Property in Key]?: number } {
+    return typeof value === 'number' && Number.isFinite(value)
+      ? ({ [key]: value } as { [Property in Key]?: number })
+      : {};
   }
 
   private getFirestore(): Firestore {

@@ -9,6 +9,7 @@ import { BusinessModule } from './business/business.module';
 import { SecurityModule } from './security/security.module';
 import { InternalModule } from './internal/internal.module';
 import { ProductModule } from './product/product.module';
+import { QuotationModule } from './quotation/quotation.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { ProductModule } from './product/product.module';
     CatalogModule,
     MessageModule,
     ProductModule,
+    QuotationModule,
     InternalModule,
   ],
   controllers: [AppController, HealthController],

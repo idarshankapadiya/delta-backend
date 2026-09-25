@@ -6,8 +6,10 @@ import { CatalogController } from './catalog.controller';
 import { CatalogRateLimiterService } from './catalog-rate-limiter.service';
 import { CatalogService } from './catalog.service';
 import { CatalogMutationService } from './catalog-mutation.service';
+import { MessageModule } from '../message/message.module';
 
 @Module({
+  imports: [MessageModule],
   controllers: [CatalogController],
   providers: [
     CatalogAccessGuard,
@@ -18,6 +20,7 @@ import { CatalogMutationService } from './catalog-mutation.service';
     CatalogMutationService,
   ],
   exports: [
+    CatalogAccessService,
     CatalogAccessGuard,
     CatalogAdminGuard,
     CatalogMutationService,

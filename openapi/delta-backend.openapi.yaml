@@ -1017,6 +1017,117 @@ paths:
       summary: Delete an out-of-stock product and unused relationships
       tags:
         - Business Products
+  /api/business/quotation-requests:
+    get:
+      operationId: BusinessQuotation_getQuotations
+      parameters: []
+      responses:
+        "200":
+          description: Up to 200 latest quotation requests.
+      security:
+        - businessSession: []
+      summary: List quotation requests newest first
+      tags:
+        - Business Quotations
+  /api/business/quotation-requests/{quotationId}:
+    get:
+      operationId: BusinessQuotation_getQuotation
+      parameters:
+        - name: quotationId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+        "404":
+          description: Quotation request not found.
+      security:
+        - businessSession: []
+      summary: Get one quotation request
+      tags:
+        - Business Quotations
+  /api/business/quotation-requests/{quotationId}/status:
+    patch:
+      operationId: BusinessQuotation_updateStatus
+      parameters:
+        - name: quotationId
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateQuotationStatusDto"
+      responses:
+        "200":
+          description: Quotation status updated.
+        "404":
+          description: Quotation request not found.
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Update quotation workflow status
+      tags:
+        - Business Quotations
+  /api/business/users:
+    get:
+      operationId: BusinessUser_getUsers
+      parameters: []
+      responses:
+        "200":
+          description: Up to 500 catalog users, newest login first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - users
+                properties:
+                  users:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - customer_id
+                        - email
+                        - mobile
+                        - name
+                        - profile_complete
+                        - created_at
+                        - last_login_at
+                      properties:
+                        customer_id:
+                          type: string
+                        email:
+                          type: string
+                          nullable: true
+                        mobile:
+                          type: string
+                          nullable: true
+                        name:
+                          type: string
+                        profile_complete:
+                          type: boolean
+                        created_at:
+                          type: string
+                          format: date-time
+                        last_login_at:
+                          type: string
+                          format: date-time
+      security:
+        - businessSession: []
+      summary: List catalog users by latest login
+      tags:
+        - Business Users
   /api/catalog/all:
     get:
       operationId: Catalog_getCatalogAll
@@ -1083,6 +1194,22 @@ paths:
       summary: Create catalog access with Google
       tags:
         - Catalog
+  /api/catalog/access/firebase/email-link:
+    post:
+      operationId: Catalog_createFirebaseEmailAccess
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CatalogFirebaseAccessDto"
+      responses:
+        "201":
+          description: ""
+      summary: Create catalog access from a Firebase email link
+      tags:
+        - Catalog
   /api/catalog/access/google/redirect:
     post:
       operationId: Catalog_createGoogleRedirectAccess
@@ -1111,7 +1238,7 @@ paths:
       summary: Get the current catalog access session
       tags:
         - Catalog
-  /api/catalog/access/request-otp:
+  /api/catalog/access/otp/request:
     post:
       operationId: Catalog_requestAccessOtp
       parameters: []
@@ -1127,7 +1254,7 @@ paths:
       summary: Request a catalog access OTP
       tags:
         - Catalog
-  /api/catalog/access/verify-otp:
+  /api/catalog/access/otp/verify:
     post:
       operationId: Catalog_verifyAccessOtp
       parameters: []
@@ -1141,6 +1268,22 @@ paths:
         "201":
           description: ""
       summary: Verify a catalog access OTP
+      tags:
+        - Catalog
+  /api/catalog/access/otp/resend:
+    post:
+      operationId: Catalog_resendAccessOtp
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CatalogResendOtpDto"
+      responses:
+        "201":
+          description: ""
+      summary: Resend a catalog access OTP
       tags:
         - Catalog
   /api/catalog/documents/access:
@@ -1311,6 +1454,155 @@ paths:
       summary: Get active product details
       tags:
         - Products
+  /api/products/cart-validation:
+    post:
+      operationId: Quotation_validateCart
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ValidateCartDto"
+      responses:
+        "200":
+          description: Authoritative cart validation result.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - valid
+                  - items
+                  - issues
+                  - totals
+                properties:
+                  valid:
+                    type: boolean
+                    example: true
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - productId
+                        - quantity
+                        - product
+                      properties:
+                        productId:
+                          type: string
+                          example: compact-nsx-100
+                        quantity:
+                          type: integer
+                          example: 2
+                        product:
+                          type: object
+                          description: Current public product snapshot including price, currency,
+                            discount, inStock, and optional stockQuantity.
+                  issues:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - productId
+                        - code
+                        - message
+                      properties:
+                        productId:
+                          type: string
+                        code:
+                          type: string
+                          enum:
+                            - duplicate
+                            - not_found
+                            - out_of_stock
+                            - quantity_unavailable
+                        message:
+                          type: string
+                  totals:
+                    type: object
+                    additionalProperties:
+                      type: number
+                    example:
+                      INR: 18450
+      summary: Validate cart products, quantities, availability, and current totals
+      tags:
+        - Quotations
+  /api/quotation-requests:
+    post:
+      description: Revalidates product availability, stock quantity, prices,
+        discounts, and currency on the server before saving the quotation.
+        Client totals are never accepted.
+      operationId: Quotation_createQuotation
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateQuotationRequestDto"
+      responses:
+        "201":
+          description: Quotation request saved.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - quotation
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  quotation:
+                    type: object
+                    required:
+                      - id
+                      - reference
+                      - status
+                      - customer
+                      - items
+                      - totals
+                      - created_at
+                      - updated_at
+                    properties:
+                      id:
+                        type: string
+                        example: QUO-01K5ABCDEF0123456789ABCDE
+                      reference:
+                        type: string
+                        example: QUO-01K5ABCDEF0123456789ABCDE
+                      status:
+                        type: string
+                        example: new
+                      customer:
+                        type: object
+                      items:
+                        type: array
+                        items:
+                          type: object
+                      totals:
+                        type: object
+                        additionalProperties:
+                          type: number
+                        example:
+                          INR: 18450
+                      notes:
+                        type: string
+                      created_at:
+                        type: string
+                        format: date-time
+                      updated_at:
+                        type: string
+                        format: date-time
+        "409":
+          description: One or more cart products or quantities are no longer available.
+        "429":
+          description: Quotation submission limit exceeded.
+      summary: Create a quotation request from an authoritative cart snapshot
+      tags:
+        - Quotations
   /api/internal/catalog/documents:
     post:
       operationId: InternalCatalog_createDocument
@@ -1481,6 +1773,8 @@ tags:
     description: Public catalog and access endpoints.
   - name: Contact Messages
     description: Public contact form submission.
+  - name: Quotations
+    description: Public cart validation and quotation submission.
   - name: Business Authentication
     description: Business dashboard authentication and session endpoints.
   - name: Business Products
@@ -1489,6 +1783,8 @@ tags:
     description: Authenticated catalog administration.
   - name: Business Messages
     description: Authenticated contact message management.
+  - name: Business Quotations
+    description: Authenticated quotation workflow management.
   - name: Internal Catalog
     description: Service-to-service catalog administration.
   - name: Internal Messages
@@ -1771,6 +2067,19 @@ components:
         brochurePath:
           type: string
           maxLength: 1024
+    UpdateQuotationStatusDto:
+      type: object
+      properties:
+        status:
+          enum:
+            - new
+            - reviewing
+            - quoted
+            - closed
+            - cancelled
+          type: string
+      required:
+        - status
     CatalogLibraryDto:
       type: object
       properties:
@@ -1808,6 +2117,14 @@ components:
           maxLength: 4096
       required:
         - id_token
+    CatalogFirebaseAccessDto:
+      type: object
+      properties:
+        id_token:
+          type: string
+          maxLength: 4096
+      required:
+        - id_token
     CatalogGoogleRedirectDto:
       type: object
       properties:
@@ -1823,46 +2140,35 @@ components:
     CatalogOtpRequestDto:
       type: object
       properties:
-        name:
-          type: string
-          maxLength: 120
-        mobile:
-          type: string
-          maxLength: 30
-        email:
+        identifier:
           type: string
           maxLength: 160
-          format: email
-        message:
+        captcha_token:
           type: string
-          maxLength: 1000
-        channel:
-          enum:
-            - whatsapp
-            - email
-          type: string
+          maxLength: 4096
       required:
-        - name
-        - channel
+        - identifier
     CatalogVerifyOtpDto:
       type: object
       properties:
         challenge_id:
           type: string
           maxLength: 40
-        mobile:
+        code:
           type: string
-          maxLength: 30
-        email:
-          type: string
-          maxLength: 160
-          format: email
-        otp:
-          type: string
-          maxLength: 12
+          maxLength: 6
+          pattern: ^\d{6}$
       required:
         - challenge_id
-        - otp
+        - code
+    CatalogResendOtpDto:
+      type: object
+      properties:
+        challenge_id:
+          type: string
+          maxLength: 40
+      required:
+        - challenge_id
     CreateMessageDto:
       type: object
       properties:
@@ -1890,3 +2196,70 @@ components:
     Object:
       type: object
       properties: {}
+    QuotationCartItemDto:
+      type: object
+      properties:
+        productId:
+          type: string
+        quantity:
+          type: number
+          minimum: 1
+          maximum: 999
+      required:
+        - productId
+        - quantity
+    ValidateCartDto:
+      type: object
+      properties:
+        items:
+          minItems: 1
+          maxItems: 50
+          type: array
+          items:
+            $ref: "#/components/schemas/QuotationCartItemDto"
+      required:
+        - items
+    QuotationCustomerDto:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 120
+        company:
+          type: string
+          maxLength: 160
+        email:
+          type: string
+          maxLength: 160
+          format: email
+        mobile:
+          type: string
+          pattern: ^\d{10}$
+        deliveryLocation:
+          type: string
+          maxLength: 500
+      required:
+        - name
+        - email
+        - mobile
+        - deliveryLocation
+    CreateQuotationRequestDto:
+      type: object
+      properties:
+        items:
+          minItems: 1
+          maxItems: 50
+          type: array
+          items:
+            $ref: "#/components/schemas/QuotationCartItemDto"
+        captcha_token:
+          type: string
+          maxLength: 4096
+        customer:
+          $ref: "#/components/schemas/QuotationCustomerDto"
+        notes:
+          type: string
+          maxLength: 2000
+      required:
+        - items
+        - customer
