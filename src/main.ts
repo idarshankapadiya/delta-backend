@@ -35,6 +35,13 @@ async function bootstrap() {
     origin: handleCorsOrigin,
     credentials: true,
     methods: corsAllowedMethods,
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-CSRF-Token',
+      'X-Backend-Admin-Token',
+      'X-Expected-Customer-Id',
+    ],
   });
 
   app.useGlobalPipes(

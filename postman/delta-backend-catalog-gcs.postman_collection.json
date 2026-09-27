@@ -3567,6 +3567,25 @@
           ]
         },
         {
+          "name": "Business Users",
+          "item": [
+            {
+              "name": "List catalog users by latest login",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/users",
+                "description": "Generated from OpenAPI operation BusinessUser_getUsers. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            }
+          ]
+        },
+        {
           "name": "Catalog",
           "item": [
             {
@@ -3703,6 +3722,84 @@
                 ],
                 "url": "{{base_url}}/api/catalog/access/logout",
                 "description": "Generated from OpenAPI operation Catalog_logoutAccess. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            }
+          ]
+        },
+        {
+          "name": "Customer Cart",
+          "item": [
+            {
+              "name": "Get the authenticated customer's cart",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{base_url}}/api/cart",
+                "description": "Generated from OpenAPI operation Cart_getCart. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "Clear the authenticated customer's cart",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": "{{base_url}}/api/cart",
+                "description": "Generated from OpenAPI operation Cart_clearCart. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "Set the absolute quantity of one cart product",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{base_url}}/api/cart/items/{{productId}}",
+                "description": "Generated from OpenAPI operation Cart_setItem. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"quantity\": 2\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Remove one product from the cart",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": "{{base_url}}/api/cart/items/{{productId}}",
+                "description": "Generated from OpenAPI operation Cart_removeItem. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "Merge a pre-login anonymous cart into the customer cart",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{base_url}}/api/cart/merge",
+                "description": "Generated from OpenAPI operation Cart_mergeCart. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"strategy\": \"maximum_quantity\",\n  \"items\": []\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
               }
             }
           ]

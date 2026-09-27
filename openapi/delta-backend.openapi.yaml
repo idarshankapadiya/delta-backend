@@ -1454,6 +1454,187 @@ paths:
       summary: Get active product details
       tags:
         - Products
+  /api/cart:
+    get:
+      operationId: Cart_getCart
+      parameters:
+        - name: X-Expected-Customer-Id
+          in: header
+          description: Optional race-condition guard. When provided, it must equal the
+            customer in the authenticated session; it never selects cart
+            ownership.
+          required: false
+          schema:
+            type: string
+        - name: x-expected-customer-id
+          required: true
+          in: header
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerCartResponseDto"
+        "401":
+          description: Catalog access is required.
+      security:
+        - catalogAccess: []
+      summary: Get the authenticated customer's cart
+      tags:
+        - Customer Cart
+    delete:
+      operationId: Cart_clearCart
+      parameters:
+        - name: X-Expected-Customer-Id
+          in: header
+          description: Optional race-condition guard. When provided, it must equal the
+            customer in the authenticated session; it never selects cart
+            ownership.
+          required: false
+          schema:
+            type: string
+        - name: x-expected-customer-id
+          required: true
+          in: header
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerCartResponseDto"
+        "401":
+          description: Catalog access is required.
+      security:
+        - catalogAccess: []
+      summary: Clear the authenticated customer's cart
+      tags:
+        - Customer Cart
+  /api/cart/items/{productId}:
+    put:
+      description: Validates the active product and stock, clamps quantity to the
+        available stock limit, and returns the complete normalized cart.
+      operationId: Cart_setItem
+      parameters:
+        - name: X-Expected-Customer-Id
+          in: header
+          description: Optional race-condition guard. When provided, it must equal the
+            customer in the authenticated session; it never selects cart
+            ownership.
+          required: false
+          schema:
+            type: string
+        - name: productId
+          required: true
+          in: path
+          schema:
+            example: compact-nsx-100
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetCartItemDto"
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerCartResponseDto"
+        "400":
+          description: Invalid product ID or quantity.
+        "401":
+          description: Catalog access is required.
+        "404":
+          description: Product not found.
+        "409":
+          description: Product is unavailable or the cart item limit was reached.
+      security:
+        - catalogAccess: []
+      summary: Set the absolute quantity of one cart product
+      tags:
+        - Customer Cart
+    delete:
+      operationId: Cart_removeItem
+      parameters:
+        - name: X-Expected-Customer-Id
+          in: header
+          description: Optional race-condition guard. When provided, it must equal the
+            customer in the authenticated session; it never selects cart
+            ownership.
+          required: false
+          schema:
+            type: string
+        - name: productId
+          required: true
+          in: path
+          schema:
+            example: compact-nsx-100
+            type: string
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerCartResponseDto"
+        "400":
+          description: Invalid product ID.
+        "401":
+          description: Catalog access is required.
+      security:
+        - catalogAccess: []
+      summary: Remove one product from the cart
+      tags:
+        - Customer Cart
+  /api/cart/merge:
+    post:
+      description: Uses maximum_quantity semantics, making retries and simultaneous
+        tab submissions idempotent.
+      operationId: Cart_mergeCart
+      parameters:
+        - name: X-Expected-Customer-Id
+          in: header
+          description: Optional race-condition guard. When provided, it must equal the
+            customer in the authenticated session; it never selects cart
+            ownership.
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MergeCartDto"
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerCartResponseDto"
+        "400":
+          description: Invalid merge request.
+        "401":
+          description: Catalog access is required.
+        "404":
+          description: One or more products were not found.
+        "409":
+          description: A product is unavailable, the customer guard mismatched, or the
+            cart item limit was reached.
+      security:
+        - catalogAccess: []
+      summary: Merge a pre-login anonymous cart into the customer cart
+      tags:
+        - Customer Cart
   /api/products/cart-validation:
     post:
       operationId: Quotation_validateCart
@@ -1769,6 +1950,8 @@ tags:
     description: API discovery and health endpoints.
   - name: Products
     description: Public product discovery endpoints.
+  - name: Customer Cart
+    description: Authenticated customer cart endpoints.
   - name: Catalog
     description: Public catalog and access endpoints.
   - name: Contact Messages
@@ -1801,7 +1984,7 @@ components:
       type: apiKey
       in: cookie
       name: catalog_access
-      description: Catalog access session cookie.
+      description: Catalog access session cookie scoped to /api.
     csrfToken:
       type: apiKey
       in: header
@@ -2196,6 +2379,127 @@ components:
     Object:
       type: object
       properties: {}
+    CartProductReferenceDto:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+      required:
+        - id
+        - name
+        - slug
+    CartProductDto:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        sku:
+          type: string
+        modelNumber:
+          type: string
+        company:
+          $ref: "#/components/schemas/CartProductReferenceDto"
+        category:
+          $ref: "#/components/schemas/CartProductReferenceDto"
+        price:
+          type: number
+          example: 100
+        currency:
+          type: string
+          example: INR
+        discountPercentage:
+          type: number
+          example: 10
+        inStock:
+          type: boolean
+        stockQuantity:
+          type: number
+          minimum: 0
+        thumbnailUrl:
+          type: string
+      required:
+        - id
+        - name
+        - company
+        - category
+        - price
+        - currency
+        - discountPercentage
+        - inStock
+    CustomerCartItemDto:
+      type: object
+      properties:
+        productId:
+          type: string
+        quantity:
+          type: number
+          minimum: 1
+          maximum: 999
+        product:
+          $ref: "#/components/schemas/CartProductDto"
+      required:
+        - productId
+        - quantity
+        - product
+    CustomerCartResponseDto:
+      type: object
+      properties:
+        customer_id:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CustomerCartItemDto"
+      required:
+        - customer_id
+        - items
+    SetCartItemDto:
+      type: object
+      properties:
+        quantity:
+          type: number
+          minimum: 1
+          maximum: 999
+          example: 2
+      required:
+        - quantity
+    MergeCartItemDto:
+      type: object
+      properties:
+        quantity:
+          type: number
+          minimum: 1
+          maximum: 999
+          example: 2
+        productId:
+          type: string
+          example: compact-nsx-100
+      required:
+        - quantity
+        - productId
+    MergeCartDto:
+      type: object
+      properties:
+        strategy:
+          type: string
+          enum:
+            - maximum_quantity
+          example: maximum_quantity
+        items:
+          minItems: 1
+          maxItems: 50
+          type: array
+          items:
+            $ref: "#/components/schemas/MergeCartItemDto"
+      required:
+        - strategy
+        - items
     QuotationCartItemDto:
       type: object
       properties:

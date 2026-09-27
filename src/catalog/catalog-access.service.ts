@@ -52,7 +52,7 @@ interface CatalogAccessSession {
   userAgent?: string;
 }
 
-interface CatalogAccessSessionSummary {
+export interface CatalogAccessSessionSummary {
   customerId: string;
   expiresAt: Date;
   name: string;
@@ -699,11 +699,11 @@ export class CatalogAccessService {
   ): Promise<CatalogSessionGrant> {
     const token = this.createAccessToken();
     const expiresAt = new Date(Date.now() + this.getSessionTtlSeconds() * 1000);
+    const customerId =
+      input.customerId ?? this.customerIdForIdentity(input.email, input.mobile);
 
     this.sessions.set(token, {
-      customerId:
-        input.customerId ??
-        this.customerIdForIdentity(input.email, input.mobile),
+      customerId,
       expiresAt,
       name: input.name,
       mobile: input.mobile,
@@ -718,6 +718,7 @@ export class CatalogAccessService {
       token,
       expiresAt,
       authProvider: input.authProvider,
+      customerId,
     };
   }
 

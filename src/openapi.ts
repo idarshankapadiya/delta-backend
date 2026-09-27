@@ -18,6 +18,7 @@ function createOpenApiConfig() {
     .setVersion('1.0.0')
     .addTag('System', 'API discovery and health endpoints.')
     .addTag('Products', 'Public product discovery endpoints.')
+    .addTag('Customer Cart', 'Authenticated customer cart endpoints.')
     .addTag('Catalog', 'Public catalog and access endpoints.')
     .addTag('Contact Messages', 'Public contact form submission.')
     .addTag('Quotations', 'Public cart validation and quotation submission.')
@@ -49,7 +50,7 @@ function createOpenApiConfig() {
       {
         type: 'apiKey',
         in: 'cookie',
-        description: 'Catalog access session cookie.',
+        description: 'Catalog access session cookie scoped to /api.',
       },
       'catalogAccess',
     )

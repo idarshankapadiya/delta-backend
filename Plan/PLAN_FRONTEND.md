@@ -234,7 +234,7 @@ Response:
 - Google sign-in requires the frontend Google client ID to match backend `GOOGLE_CLIENT_ID`.
 - Google ID token verification happens only on the backend; frontend success alone does not grant catalog access.
 - Backend default access TTL is 180 days (`CATALOG_ACCESS_TTL_SECONDS`), matching the 6-month same-browser login requirement.
-- The `catalog_access` cookie is HttpOnly and scoped to `Path=/api/catalog`; the Header needs a backend session-status endpoint to display reliable login state after refresh.
+- The `catalog_access` cookie is HttpOnly and scoped to `Path=/api` so catalog and customer-cart endpoints receive the same authenticated session.
 - OTP delivery/validation is not part of the current public catalog unlock UX.
 - Backend restart can invalidate access cookies before browser expiry.
 - Rate limits are currently in memory and return `429` when exhausted.

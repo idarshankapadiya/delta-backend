@@ -84,7 +84,12 @@ describe('AppController (e2e)', () => {
       .expect('Content-Type', /application\/json/);
     const document = jsonResponse.body as OpenAPIObject;
     expect(document.openapi).toBe('3.0.0');
-    expect(Object.keys(document.paths)).toHaveLength(51);
+    expect(Object.keys(document.paths)).toHaveLength(55);
+    expect(document.paths['/api/cart']?.get).toBeDefined();
+    expect(document.paths['/api/cart']?.delete).toBeDefined();
+    expect(document.paths['/api/cart/items/{productId}']?.put).toBeDefined();
+    expect(document.paths['/api/cart/items/{productId}']?.delete).toBeDefined();
+    expect(document.paths['/api/cart/merge']?.post).toBeDefined();
     const specificationPath =
       document.paths['/api/business/products/{productId}/specifications/{key}'];
     expect(specificationPath?.put).toBeDefined();
@@ -120,6 +125,11 @@ describe('AppController (e2e)', () => {
       ['GET', '/api/products'],
       ['GET', '/api/products/:productId'],
       ['POST', '/api/products/cart-validation'],
+      ['GET', '/api/cart'],
+      ['DELETE', '/api/cart'],
+      ['PUT', '/api/cart/items/:productId'],
+      ['DELETE', '/api/cart/items/:productId'],
+      ['POST', '/api/cart/merge'],
       ['POST', '/api/quotation-requests'],
       ['POST', '/api/message'],
       ['GET', '/api/catalog/all'],

@@ -65,6 +65,19 @@ npm run build
 Use `npm run lint:fix` to apply ESLint fixes. The regular `lint` command is
 read-only and is safe to use as a validation check.
 
+## Customer carts
+
+Authenticated carts are stored below each `catalog_customers` document in the
+`cart_items` subcollection. Cart ownership always comes from the verified
+`catalog_access` session; `X-Expected-Customer-Id` is only a stale-session
+guard and never selects another customer's cart. The API validates products
+against the product catalog and returns current product snapshots instead of
+trusting browser-supplied prices.
+
+Set `CART_STORE=memory` for local development without cart persistence. Tests
+use the memory store automatically. Production carts require
+`FIRESTORE_DATABASE_ID`.
+
 ## Quotation requests
 
 Public cart validation and quotation submission use the product database and

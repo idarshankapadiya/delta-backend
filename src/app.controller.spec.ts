@@ -34,6 +34,18 @@ describe('AppController', () => {
             path: '/api/products/:productId',
           }),
           expect.objectContaining({
+            method: 'GET/DELETE',
+            path: '/api/cart',
+          }),
+          expect.objectContaining({
+            method: 'PUT/DELETE',
+            path: '/api/cart/items/:productId',
+          }),
+          expect.objectContaining({
+            method: 'POST',
+            path: '/api/cart/merge',
+          }),
+          expect.objectContaining({
             method: 'POST',
             path: '/api/message',
           }),

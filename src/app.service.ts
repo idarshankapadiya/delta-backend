@@ -72,6 +72,27 @@ export class AppService {
           auth: 'public-site origin',
         },
         {
+          method: 'GET/DELETE',
+          path: '/api/cart',
+          description:
+            "Return or clear the authenticated customer's persisted cart.",
+          auth: 'catalog_access HttpOnly cookie',
+        },
+        {
+          method: 'PUT/DELETE',
+          path: '/api/cart/items/:productId',
+          description:
+            "Set a product quantity or remove it from the authenticated customer's cart.",
+          auth: 'catalog_access HttpOnly cookie',
+        },
+        {
+          method: 'POST',
+          path: '/api/cart/merge',
+          description:
+            'Idempotently merge an anonymous cart into the authenticated customer cart.',
+          auth: 'catalog_access HttpOnly cookie',
+        },
+        {
           method: 'POST',
           path: '/api/quotation-requests',
           description:

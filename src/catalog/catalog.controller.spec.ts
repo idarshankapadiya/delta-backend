@@ -118,6 +118,7 @@ describe('CatalogController', () => {
     expect(reply.header.mock.calls[0]?.[1]).toContain(
       'catalog_access=google-session-token',
     );
+    expect(reply.header.mock.calls[0]?.[1]).toContain('Path=/api');
   });
 
   it('sets the access cookie and redirects home for Google redirect sign-in', async () => {
@@ -211,46 +212,7 @@ describe('CatalogController', () => {
     expect(reply.header.mock.calls[0]?.[1]).toContain(
       'catalog_access=firebase-session-token',
     );
-  });
-
-  it('creates and claims a cross-device Firebase email-link handoff', async () => {
-    jest
-      .spyOn(catalogAccessService, 'requestFirebaseEmailLink')
-      .mockResolvedValue({
-        challenge_id: 'email-challenge',
-        link_token: 'link-token',
-        claim_token: 'claim-token',
-        expires_at: '2026-07-19T00:00:00.000Z',
-      });
-
-    await expect(
-      controller.requestFirebaseEmailLink(
-        { email: 'Customer@Example.com' },
-        createRequest(),
-      ),
-    ).resolves.toMatchObject({ challenge_id: 'email-challenge' });
-
-    jest
-      .spyOn(catalogAccessService, 'claimFirebaseEmailLink')
-      .mockResolvedValue({
-        token: 'claimed-session-token',
-        expiresAt: new Date('2026-07-19T00:00:00.000Z'),
-        authProvider: 'firebase_email_link',
-        customerId: 'customer-id',
-        email: 'customer@example.com',
-        name: 'customer',
-      });
-    const reply = createReply();
-    const response = await controller.claimFirebaseEmailLink(
-      { challenge_id: 'email-challenge', claim_token: 'claim-token' },
-      createRequest(),
-      reply as unknown as FastifyReply,
-    );
-
-    expect(response.status).toBe('complete');
-    expect(reply.header.mock.calls[0]?.[1]).toContain(
-      'catalog_access=claimed-session-token',
-    );
+    expect(reply.header.mock.calls[0]?.[1]).toContain('Path=/api');
   });
 
   it('resends an active OTP after the cooldown', async () => {

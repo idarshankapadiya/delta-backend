@@ -427,7 +427,7 @@ export class CatalogController {
   private createAccessCookie(token: string, expiresAt: Date): string {
     const cookieParts = [
       `${catalogAccessCookieName}=${encodeURIComponent(token)}`,
-      'Path=/api/catalog',
+      'Path=/api',
       'HttpOnly',
       'SameSite=Lax',
       `Expires=${expiresAt.toUTCString()}`,
@@ -443,7 +443,7 @@ export class CatalogController {
   private createClearedAccessCookie(): string {
     const cookieParts = [
       `${catalogAccessCookieName}=`,
-      'Path=/api/catalog',
+      'Path=/api',
       'HttpOnly',
       'SameSite=Lax',
       'Max-Age=0',

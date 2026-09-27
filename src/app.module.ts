@@ -10,6 +10,7 @@ import { SecurityModule } from './security/security.module';
 import { InternalModule } from './internal/internal.module';
 import { ProductModule } from './product/product.module';
 import { QuotationModule } from './quotation/quotation.module';
+import { CartModule } from './cart/cart.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { QuotationModule } from './quotation/quotation.module';
     CatalogModule,
     MessageModule,
     ProductModule,
+    CartModule,
     QuotationModule,
     InternalModule,
   ],
