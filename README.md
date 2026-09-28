@@ -78,6 +78,18 @@ Set `CART_STORE=memory` for local development without cart persistence. Tests
 use the memory store automatically. Production carts require
 `FIRESTORE_DATABASE_ID`.
 
+## Customer orders
+
+`POST /api/orders` snapshots the authenticated customer's validated cart into
+the `customer_orders` collection, records payment as pending, and clears the
+cart after the order is saved. Orders use the Firestore database
+`client-orders-db` by default; set `ORDER_FIRESTORE_DATABASE_ID` only when a
+different database is required. The database must already exist and the
+backend runtime service account must have Firestore write access.
+
+The client supplies a UUID `orderRequestId`, which is used as the document ID
+so retrying a checkout request does not create a duplicate order.
+
 ## Quotation requests
 
 Public cart validation and quotation submission use the product database and

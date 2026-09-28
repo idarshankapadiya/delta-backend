@@ -84,7 +84,7 @@ describe('AppController (e2e)', () => {
       .expect('Content-Type', /application\/json/);
     const document = jsonResponse.body as OpenAPIObject;
     expect(document.openapi).toBe('3.0.0');
-    expect(Object.keys(document.paths)).toHaveLength(55);
+    expect(Object.keys(document.paths)).toHaveLength(57);
     expect(document.paths['/api/cart']?.get).toBeDefined();
     expect(document.paths['/api/cart']?.delete).toBeDefined();
     expect(document.paths['/api/cart/items/{productId}']?.put).toBeDefined();
@@ -177,6 +177,7 @@ describe('AppController (e2e)', () => {
       ['GET', '/api/business/quotation-requests'],
       ['GET', '/api/business/quotation-requests/:quotationId'],
       ['PATCH', '/api/business/quotation-requests/:quotationId/status'],
+      ['GET', '/api/business/orders'],
       ['GET', '/api/internal/messages'],
       ['POST', '/api/internal/catalog/documents'],
       ['PUT', '/api/internal/catalog/documents/:document_id'],

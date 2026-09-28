@@ -232,6 +232,18 @@ paths:
       summary: Delete a contact message
       tags:
         - Business Messages
+  /api/business/orders:
+    get:
+      operationId: BusinessOrder_getOrders
+      parameters: []
+      responses:
+        "200":
+          description: Up to 200 latest placed customer orders.
+      security:
+        - businessSession: []
+      summary: List placed customer orders newest first
+      tags:
+        - Business Orders
   /api/business/companies:
     post:
       operationId: BusinessProduct_createCompany
@@ -1635,6 +1647,42 @@ paths:
       summary: Merge a pre-login anonymous cart into the customer cart
       tags:
         - Customer Cart
+  /api/orders:
+    post:
+      description: Snapshots validated cart pricing into Firestore, records payment as
+        pending, and clears the cart. orderRequestId makes retries idempotent.
+      operationId: Order_createOrder
+      parameters:
+        - name: X-Expected-Customer-Id
+          in: header
+          description: Must equal the customer in the authenticated session.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateOrderDto"
+      responses:
+        "201":
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateOrderResponseDto"
+        "400":
+          description: Invalid checkout details or empty cart.
+        "401":
+          description: Catalog access is required.
+        "409":
+          description: The authenticated customer changed.
+      security:
+        - catalogAccess: []
+      summary: Place the authenticated customer's order
+      tags:
+        - Customer Orders
   /api/products/cart-validation:
     post:
       operationId: Quotation_validateCart
@@ -2500,6 +2548,105 @@ components:
       required:
         - strategy
         - items
+    OrderAddressDto:
+      type: object
+      properties:
+        firstName:
+          type: string
+          maxLength: 100
+          example: Ankita
+        lastName:
+          type: string
+          maxLength: 100
+          example: Patel
+        company:
+          type: string
+          maxLength: 200
+        gstNumber:
+          type: string
+          pattern: ^[0-9A-Z]{15}$
+          example: 27ABCDE1234F1Z5
+        addressLine1:
+          type: string
+          maxLength: 250
+        addressLine2:
+          type: string
+          maxLength: 250
+        city:
+          type: string
+          maxLength: 100
+        state:
+          type: string
+          maxLength: 100
+        postcode:
+          type: string
+          pattern: ^\d{6}$
+          example: "411001"
+        phone:
+          type: string
+          pattern: ^\d{10}$
+          example: "9876543210"
+      required:
+        - firstName
+        - lastName
+        - addressLine1
+        - city
+        - state
+        - postcode
+        - phone
+    CreateOrderDto:
+      type: object
+      properties:
+        orderRequestId:
+          type: string
+          format: uuid
+        email:
+          type: string
+          maxLength: 254
+          format: email
+          example: customer@example.com
+        billingAddress:
+          $ref: "#/components/schemas/OrderAddressDto"
+        shippingAddress:
+          $ref: "#/components/schemas/OrderAddressDto"
+        notes:
+          type: string
+          maxLength: 2000
+        termsAccepted:
+          type: boolean
+          example: true
+      required:
+        - orderRequestId
+        - email
+        - billingAddress
+        - termsAccepted
+    CreateOrderResponseDto:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          example: true
+        order_id:
+          type: string
+        reference:
+          type: string
+          example: DE-01K5ABCDEF1234567890
+        status:
+          type: string
+          example: placed
+        payment_status:
+          type: string
+          example: pending
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - ok
+        - order_id
+        - reference
+        - status
+        - payment_status
+        - created_at
     QuotationCartItemDto:
       type: object
       properties:

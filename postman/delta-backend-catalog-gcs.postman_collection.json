@@ -3238,6 +3238,25 @@
           ]
         },
         {
+          "name": "Business Orders",
+          "item": [
+            {
+              "name": "List placed customer orders newest first",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/orders",
+                "description": "Generated from OpenAPI operation BusinessOrder_getOrders. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            }
+          ]
+        },
+        {
           "name": "Business Products",
           "item": [
             {
@@ -3794,6 +3813,34 @@
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"strategy\": \"maximum_quantity\",\n  \"items\": []\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Customer Orders",
+          "item": [
+            {
+              "name": "Place the authenticated customer's order",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{base_url}}/api/orders",
+                "description": "Generated from OpenAPI operation Order_createOrder. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"orderRequestId\": \"<orderRequestId>\",\n  \"email\": \"customer@example.com\",\n  \"billingAddress\": {\n    \"firstName\": \"Ankita\",\n    \"lastName\": \"Patel\",\n    \"company\": \"<company>\",\n    \"gstNumber\": \"27ABCDE1234F1Z5\",\n    \"addressLine1\": \"<addressLine1>\",\n    \"addressLine2\": \"<addressLine2>\",\n    \"city\": \"<city>\",\n    \"state\": \"<state>\",\n    \"postcode\": \"411001\",\n    \"phone\": \"9876543210\"\n  },\n  \"shippingAddress\": {\n    \"firstName\": \"Ankita\",\n    \"lastName\": \"Patel\",\n    \"company\": \"<company>\",\n    \"gstNumber\": \"27ABCDE1234F1Z5\",\n    \"addressLine1\": \"<addressLine1>\",\n    \"addressLine2\": \"<addressLine2>\",\n    \"city\": \"<city>\",\n    \"state\": \"<state>\",\n    \"postcode\": \"411001\",\n    \"phone\": \"9876543210\"\n  },\n  \"notes\": \"<notes>\",\n  \"termsAccepted\": true\n}",
                   "options": {
                     "raw": {
                       "language": "json"

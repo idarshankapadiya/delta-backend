@@ -14,13 +14,22 @@ import { BusinessProductController } from './business-product.controller';
 import { QuotationModule } from '../quotation/quotation.module';
 import { BusinessQuotationController } from './business-quotation.controller';
 import { BusinessUserController } from './business-user.controller';
+import { OrderModule } from '../order/order.module';
+import { BusinessOrderController } from './business-order.controller';
 
 @Module({
-  imports: [CatalogModule, MessageModule, ProductModule, QuotationModule],
+  imports: [
+    CatalogModule,
+    MessageModule,
+    ProductModule,
+    QuotationModule,
+    OrderModule,
+  ],
   controllers: [
     BusinessAuthController,
     BusinessCatalogController,
     BusinessMessageController,
+    BusinessOrderController,
     BusinessProductController,
     BusinessQuotationController,
     BusinessUserController,

@@ -145,6 +145,12 @@ export class AppService {
         },
         {
           method: 'GET',
+          path: '/api/business/orders',
+          description: 'Return placed customer orders newest first.',
+          auth: 'business session',
+        },
+        {
+          method: 'GET',
           path: '/api/business/catalog/all',
           description: 'Return the catalog for dashboard administration.',
           auth: 'business session',
