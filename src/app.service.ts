@@ -254,6 +254,13 @@ export class AppService {
         },
         {
           method: 'POST',
+          path: '/api/catalog/access/me',
+          description:
+            'Restore the current catalog access session with a browser Origin header.',
+          auth: 'allowed public Origin and catalog_access HttpOnly cookie',
+        },
+        {
+          method: 'POST',
           path: '/api/catalog/access/otp/request',
           description:
             'Create an email or SMS OTP challenge for an identifier.',

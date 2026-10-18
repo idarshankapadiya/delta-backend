@@ -3201,6 +3201,191 @@
           ]
         },
         {
+          "name": "Business Inventory",
+          "item": [
+            {
+              "name": "List inventory for active products",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/inventory",
+                "description": "Generated from OpenAPI operation BusinessInventory_getInventory. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "List low-stock and out-of-stock products",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/inventory/low-stock",
+                "description": "Generated from OpenAPI operation BusinessInventory_getLowStock. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "List immutable stock movement history",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/inventory/movements",
+                "description": "Generated from OpenAPI operation BusinessInventory_getMovements. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "Get inventory for one product",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/inventory/{{productId}}",
+                "description": "Generated from OpenAPI operation BusinessInventory_getProductInventory. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "Receive purchased stock",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/inventory/receipts",
+                "description": "Generated from OpenAPI operation BusinessInventory_receive. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"productId\": \"<productId>\",\n  \"quantity\": 0,\n  \"referenceId\": \"PO-2026-0042\",\n  \"notes\": \"<notes>\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Adjust stock with a mandatory reason",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/inventory/{{productId}}/adjustments",
+                "description": "Generated from OpenAPI operation BusinessInventory_adjust. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"quantityDelta\": -2,\n  \"type\": \"DAMAGE\",\n  \"reason\": \"<reason>\",\n  \"notes\": \"<notes>\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Reconcile stock to a physical count",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/inventory/{{productId}}/stock-counts",
+                "description": "Generated from OpenAPI operation BusinessInventory_count. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"countedQuantity\": 0,\n  \"reason\": \"<reason>\",\n  \"notes\": \"<notes>\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Set the product reorder level",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/inventory/{{productId}}/settings",
+                "description": "Generated from OpenAPI operation BusinessInventory_updateSettings. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"reorderLevel\": 0\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
           "name": "Business Messages",
           "item": [
             {
@@ -3252,6 +3437,78 @@
                 ],
                 "url": "{{base_url}}/api/business/orders",
                 "description": "Generated from OpenAPI operation BusinessOrder_getOrders. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "Confirm an order and reserve available stock",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/orders/{{orderId}}/confirm",
+                "description": "Generated from OpenAPI operation BusinessOrder_confirm. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "Dispatch an order and consume its reserved stock",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/orders/{{orderId}}/dispatch",
+                "description": "Generated from OpenAPI operation BusinessOrder_dispatch. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "Cancel an order and release any reservation",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/orders/{{orderId}}/cancel",
+                "description": "Generated from OpenAPI operation BusinessOrder_cancel. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "Return all order items to sellable stock",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/orders/{{orderId}}/return",
+                "description": "Generated from OpenAPI operation BusinessOrder_returnOrder. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
               }
             }
           ]
@@ -3649,6 +3906,20 @@
               }
             },
             {
+              "name": "Restore the current catalog access session",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/catalog/access/me",
+                "description": "Generated from OpenAPI operation Catalog_restoreAccessSession. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
               "name": "Request a catalog access OTP",
               "request": {
                 "method": "POST",
@@ -3826,6 +4097,15 @@
         {
           "name": "Customer Orders",
           "item": [
+            {
+              "name": "List the authenticated customer's orders",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{base_url}}/api/orders",
+                "description": "Generated from OpenAPI operation Order_getOrders. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
             {
               "name": "Place the authenticated customer's order",
               "request": {

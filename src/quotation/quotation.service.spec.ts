@@ -31,6 +31,8 @@ describe('QuotationService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.replaceProperty(process, 'env', { ...process.env });
+    delete process.env.VITE_DISCOUNTS_ENABLED;
     products.getProductsForCart.mockResolvedValue({
       products: [product],
       missingProductIds: [],
@@ -45,6 +47,55 @@ describe('QuotationService', () => {
       collection: jest.fn(() => collection),
     };
   });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  it.each(['true', 'false', undefined])(
+    'uses the server discount policy (%s) for validation and saved quotations',
+    async (flag) => {
+      if (flag !== undefined) process.env.VITE_DISCOUNTS_ENABLED = flag;
+      const enabled = flag !== 'false';
+      const secondProduct = {
+        ...product,
+        id: 'product-2',
+        price: 50,
+        currency: 'USD',
+        discountPercentage: 20,
+      };
+      products.getProductsForCart.mockResolvedValue({
+        products: [product, secondProduct],
+        missingProductIds: [],
+      });
+      const items = [
+        { productId: product.id, quantity: 2 },
+        { productId: secondProduct.id, quantity: 3 },
+      ];
+      const totals = { INR: enabled ? 180 : 200, USD: enabled ? 120 : 150 };
+      const validation = await service.validateCart(items);
+      expect(validation.totals).toEqual(totals);
+      expect(validation.items[0].product.discountPercentage).toBe(10);
+      const result = await service.createQuotation({
+        customer: {
+          name: 'Customer',
+          email: 'customer@example.com',
+          mobile: '9999999999',
+          deliveryLocation: 'Pune',
+        },
+        items,
+      });
+      expect(result.quotation.totals).toEqual(totals);
+      expect(result.quotation.items[0]).toMatchObject({
+        listUnitPrice: 100,
+        discountPercentage: enabled ? 10 : 0,
+        quotedUnitPrice: enabled ? 90 : 100,
+        lineTotal: totals.INR,
+      });
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({ totals, items: result.quotation.items }),
+      );
+      expect(notifications.notify).toHaveBeenCalledWith(result.quotation);
+    },
+  );
 
   it('calculates authoritative discounted totals from backend products', async () => {
     await expect(

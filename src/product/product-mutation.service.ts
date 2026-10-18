@@ -37,6 +37,10 @@ import type {
   ProductUploadFiles,
   UploadedProductAssets,
 } from './product-upload.types';
+import {
+  INVENTORY_COLLECTION,
+  INVENTORY_MOVEMENT_COLLECTION,
+} from '../inventory/inventory.types';
 
 type FirestoreRecord = Record<string, unknown>;
 type ProductStoragePrefix = {
@@ -284,6 +288,12 @@ export class ProductMutationService {
     const categoryReference = firestore
       .collection('categories')
       .doc(categoryId);
+    const inventoryReference = firestore
+      .collection(INVENTORY_COLLECTION)
+      .doc(productId);
+    const openingMovementReference = firestore
+      .collection(INVENTORY_MOVEMENT_COLLECTION)
+      .doc(ulid());
 
     const uploadedAssets = this.hasProductUploadFiles(files)
       ? await this.uploadProductAssets(productId, companyId, files)
@@ -353,6 +363,33 @@ export class ProductMutationService {
           uploadedAssets,
         );
         transaction.create(productReference, product);
+        const openingQuantity = this.numberValue(product.stockQuantity);
+        transaction.create(inventoryReference, {
+          onHandQuantity: openingQuantity,
+          reservedQuantity: 0,
+          availableQuantity: openingQuantity,
+          incomingQuantity: 0,
+          damagedQuantity: 0,
+          reorderLevel: 0,
+          version: 1,
+          createdAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+          updatedBy: 'product-create',
+        });
+        if (openingQuantity > 0) {
+          transaction.create(openingMovementReference, {
+            productId,
+            type: 'OPENING_BALANCE',
+            quantityDelta: openingQuantity,
+            onHandBefore: 0,
+            onHandAfter: openingQuantity,
+            reservedBefore: 0,
+            reservedAfter: 0,
+            reason: 'Opening balance entered when the product was created',
+            createdBy: 'product-create',
+            createdAt: FieldValue.serverTimestamp(),
+          });
+        }
       });
     } catch (error) {
       await this.deleteUploadedAssets(uploadedAssets);
@@ -770,6 +807,9 @@ export class ProductMutationService {
         : undefined;
 
       transaction.delete(reference);
+      transaction.delete(
+        firestore.collection(INVENTORY_COLLECTION).doc(productId),
+      );
       if (deleteCompany && companyReference) {
         transaction.delete(companyReference);
       }
@@ -876,10 +916,8 @@ export class ProductMutationService {
       price: input.price,
       currency: input.currency || 'INR',
       discountPercentage: input.discountPercentage ?? 0,
-      inStock: input.inStock,
-      ...(input.stockQuantity !== undefined
-        ? { stockQuantity: input.stockQuantity }
-        : {}),
+      inStock: (input.stockQuantity ?? (input.inStock ? 1 : 0)) > 0,
+      stockQuantity: input.stockQuantity ?? (input.inStock ? 1 : 0),
       active: input.active ?? true,
       shortDescription: input.shortDescription?.trim() || '',
       description: input.description?.trim() || '',
@@ -915,8 +953,6 @@ export class ProductMutationService {
       'price',
       'currency',
       'discountPercentage',
-      'inStock',
-      'stockQuantity',
       'active',
       'specifications',
     ];

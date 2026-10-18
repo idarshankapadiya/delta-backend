@@ -16,6 +16,8 @@ import { BusinessQuotationController } from './business-quotation.controller';
 import { BusinessUserController } from './business-user.controller';
 import { OrderModule } from '../order/order.module';
 import { BusinessOrderController } from './business-order.controller';
+import { InventoryModule } from '../inventory/inventory.module';
+import { BusinessInventoryController } from './business-inventory.controller';
 
 @Module({
   imports: [
@@ -24,12 +26,14 @@ import { BusinessOrderController } from './business-order.controller';
     ProductModule,
     QuotationModule,
     OrderModule,
+    InventoryModule,
   ],
   controllers: [
     BusinessAuthController,
     BusinessCatalogController,
     BusinessMessageController,
     BusinessOrderController,
+    BusinessInventoryController,
     BusinessProductController,
     BusinessQuotationController,
     BusinessUserController,

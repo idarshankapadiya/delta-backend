@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { Firestore, Timestamp } from '@google-cloud/firestore';
 import { ulid } from 'ulid';
+import { getProductPricing } from '../config/pricing.config';
 import { ProductService } from '../product/product.service';
 import type { ProductListItem } from '../product/product.types';
 import type { CreateQuotationRequestDto } from './dto/quotation.dto';
@@ -228,9 +229,8 @@ export class QuotationService {
     product: ProductListItem,
     quantity: number,
   ): QuotationLineItem {
-    const quotedUnitPrice = this.roundMoney(
-      product.price * (1 - product.discountPercentage / 100),
-    );
+    const { unitPrice, discountPercentage } = getProductPricing(product);
+    const quotedUnitPrice = this.roundMoney(unitPrice);
 
     return {
       productId: product.id,
@@ -242,7 +242,7 @@ export class QuotationService {
       quantity,
       currency: product.currency,
       listUnitPrice: product.price,
-      discountPercentage: product.discountPercentage,
+      discountPercentage,
       quotedUnitPrice,
       lineTotal: this.roundMoney(quotedUnitPrice * quantity),
     };

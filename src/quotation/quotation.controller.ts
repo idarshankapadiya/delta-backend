@@ -45,6 +45,8 @@ export class QuotationController {
   @ApiOperation({
     summary:
       'Validate cart products, quantities, availability, and current totals',
+    description:
+      'VITE_DISCOUNTS_ENABLED=false on the backend disables product discounts and uses original product prices; true or unset applies catalog discounts. Saved snapshots record the applied discount (zero when disabled). Existing snapshots are not repriced. Client prices and discount flags are never accepted.',
   })
   @ApiOkResponse({
     description: 'Authoritative cart validation result.',
@@ -106,7 +108,7 @@ export class QuotationController {
   @ApiOperation({
     summary: 'Create a quotation request from an authoritative cart snapshot',
     description:
-      'Revalidates product availability, stock quantity, prices, discounts, and currency on the server before saving the quotation. Client totals are never accepted.',
+      'Revalidates product availability, stock quantity, prices, discounts, and currency on the server before saving the quotation. Client totals and discount flags are never accepted. VITE_DISCOUNTS_ENABLED=false on the backend disables product discounts and uses original product prices; true or unset applies catalog discounts. Saved snapshots record the applied discount (zero when disabled). Existing snapshots are not repriced.',
   })
   @ApiCreatedResponse({
     description: 'Quotation request saved.',

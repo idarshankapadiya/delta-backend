@@ -3,6 +3,7 @@ import {
   BadRequestException,
   Controller,
   Get,
+  HttpCode,
   NotFoundException,
   Post,
   Req,
@@ -224,6 +225,29 @@ export class CatalogController {
       name: session.name,
       expires_at: session.expiresAt.toISOString(),
     };
+  }
+
+  @Post('access/me')
+  @HttpCode(200)
+  @ApiCookieAuth('catalogAccess')
+  @ApiOperation({
+    summary: 'Restore the current catalog access session',
+    description:
+      'Read-only session lookup using POST so browsers include Origin on same-origin requests. Requires an allowed public Origin and a valid catalog_access cookie. Does not create or extend the session.',
+  })
+  @ApiResponse({ status: 200, description: 'Current authenticated session.' })
+  @ApiResponse({
+    status: 401,
+    description: 'Missing, expired, or invalid session.',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Missing or disallowed public Origin.',
+  })
+  @UseGuards(PublicSiteOriginGuard)
+  @UseInterceptors(NoStoreInterceptor)
+  restoreAccessSession(@Req() request: FastifyRequest) {
+    return this.getAccessMe(request);
   }
 
   @Post('access/otp/request')

@@ -1,21 +1,30 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
+  NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import {
+  FieldValue,
   Firestore,
   Timestamp,
   type DocumentData,
 } from '@google-cloud/firestore';
 import { ulid } from 'ulid';
+import { getProductPricing } from '../config/pricing.config';
 import { CartService } from '../cart/cart.service';
+import { InventoryService } from '../inventory/inventory.service';
 import type {
   CreateOrderDto,
   CreateOrderResponseDto,
   OrderAddressDto,
 } from './dto/create-order.dto';
+import type {
+  CustomerOrderDto,
+  CustomerOrdersResponseDto,
+} from './dto/customer-order.dto';
 
 const ORDER_DATABASE_ID = 'client-orders-db';
 const ORDER_COLLECTION = 'customer_orders';
@@ -78,7 +87,10 @@ export type BusinessOrder = {
 export class OrderService {
   private firestore?: Firestore;
 
-  constructor(private readonly carts: CartService) {}
+  constructor(
+    private readonly carts: CartService,
+    private readonly inventory: InventoryService,
+  ) {}
 
   async getOrders(): Promise<{ orders: BusinessOrder[] }> {
     const snapshot = await this.getFirestore()
@@ -91,6 +103,22 @@ export class OrderService {
       orders: snapshot.docs.map((document) =>
         this.toBusinessOrder(document.id, document.data()),
       ),
+    };
+  }
+
+  async getCustomerOrders(
+    customerId: string,
+  ): Promise<CustomerOrdersResponseDto> {
+    const snapshot = await this.getFirestore()
+      .collection(ORDER_COLLECTION)
+      .where('customer_id', '==', customerId)
+      .get();
+
+    return {
+      orders: snapshot.docs
+        .map((document) => this.toCustomerOrder(document.id, document.data()))
+        .sort((left, right) => right.created_at.localeCompare(left.created_at))
+        .slice(0, 100),
     };
   }
 
@@ -122,7 +150,7 @@ export class OrderService {
       { subtotal: number; shipping: number; total: number }
     > = {};
     const items = cart.items.map(({ product, quantity }) => {
-      const unitPrice = product.price * (1 - product.discountPercentage / 100);
+      const { unitPrice, discountPercentage } = getProductPricing(product);
       const lineTotal = unitPrice * quantity;
       const currencyTotal = totals[product.currency] ?? {
         subtotal: 0,
@@ -140,7 +168,7 @@ export class OrderService {
         ...(product.modelNumber ? { model_number: product.modelNumber } : {}),
         quantity,
         list_unit_price: product.price,
-        discount_percentage: product.discountPercentage,
+        discount_percentage: discountPercentage,
         unit_price: unitPrice,
         line_total: lineTotal,
         currency: product.currency,
@@ -187,6 +215,159 @@ export class OrderService {
       ...storedResponse,
       customer_id: customerId,
     });
+  }
+
+  async confirmOrder(orderId: string, actor: string): Promise<BusinessOrder> {
+    const order = await this.getOrderDocument(orderId);
+    const status = this.stringValue(order.data.status) || 'placed';
+    if (status === 'confirmed')
+      return this.toBusinessOrder(orderId, order.data);
+    if (!['placed', 'pending_stock'].includes(status)) {
+      throw new ConflictException(
+        `Order cannot be confirmed from ${status} status.`,
+      );
+    }
+
+    try {
+      await this.inventory.reserveOrder(
+        orderId,
+        this.inventoryItems(order.data),
+        actor,
+      );
+    } catch (error) {
+      if (error instanceof ConflictException) {
+        await order.reference.update({
+          status: 'pending_stock',
+          updated_at: FieldValue.serverTimestamp(),
+          fulfillment_updated_by: actor,
+        });
+      }
+      throw error;
+    }
+    return this.updateOrderStatus(
+      orderId,
+      ['placed', 'pending_stock'],
+      'confirmed',
+      actor,
+    );
+  }
+
+  async dispatchOrder(orderId: string, actor: string): Promise<BusinessOrder> {
+    const order = await this.getOrderDocument(orderId);
+    const status = this.stringValue(order.data.status);
+    if (status === 'dispatched')
+      return this.toBusinessOrder(orderId, order.data);
+    if (status !== 'confirmed') {
+      throw new ConflictException(
+        `Order cannot be dispatched from ${status} status.`,
+      );
+    }
+    await this.inventory.dispatchOrder(
+      orderId,
+      this.inventoryItems(order.data),
+      actor,
+    );
+    return this.updateOrderStatus(orderId, ['confirmed'], 'dispatched', actor);
+  }
+
+  async cancelOrder(orderId: string, actor: string): Promise<BusinessOrder> {
+    const order = await this.getOrderDocument(orderId);
+    const status = this.stringValue(order.data.status) || 'placed';
+    if (status === 'cancelled')
+      return this.toBusinessOrder(orderId, order.data);
+    if (!['placed', 'pending_stock', 'confirmed'].includes(status)) {
+      throw new ConflictException(
+        `Order cannot be cancelled from ${status} status.`,
+      );
+    }
+    if (status === 'confirmed') {
+      await this.inventory.releaseOrder(
+        orderId,
+        this.inventoryItems(order.data),
+        actor,
+      );
+    }
+    return this.updateOrderStatus(
+      orderId,
+      ['placed', 'pending_stock', 'confirmed'],
+      'cancelled',
+      actor,
+    );
+  }
+
+  async returnOrder(orderId: string, actor: string): Promise<BusinessOrder> {
+    const order = await this.getOrderDocument(orderId);
+    const status = this.stringValue(order.data.status);
+    if (status === 'returned') return this.toBusinessOrder(orderId, order.data);
+    if (!['dispatched', 'delivered'].includes(status)) {
+      throw new ConflictException(
+        `Order cannot be returned from ${status} status.`,
+      );
+    }
+    await this.inventory.returnOrder(
+      orderId,
+      this.inventoryItems(order.data),
+      actor,
+    );
+    return this.updateOrderStatus(
+      orderId,
+      ['dispatched', 'delivered'],
+      'returned',
+      actor,
+    );
+  }
+
+  private async getOrderDocument(orderId: string): Promise<{
+    reference: FirebaseFirestore.DocumentReference;
+    data: DocumentData;
+  }> {
+    const reference = this.getFirestore()
+      .collection(ORDER_COLLECTION)
+      .doc(orderId);
+    const snapshot = await reference.get();
+    if (!snapshot.exists) throw new NotFoundException('Order not found');
+    return { reference, data: snapshot.data() as DocumentData };
+  }
+
+  private inventoryItems(data: DocumentData) {
+    const items = Array.isArray(data.items) ? data.items : [];
+    return items.map((value) => {
+      const item = this.objectValue(value);
+      return {
+        productId: this.stringValue(item.product_id),
+        quantity: this.numberValue(item.quantity),
+      };
+    });
+  }
+
+  private async updateOrderStatus(
+    orderId: string,
+    allowedStatuses: string[],
+    nextStatus: string,
+    actor: string,
+  ): Promise<BusinessOrder> {
+    const firestore = this.getFirestore();
+    const reference = firestore.collection(ORDER_COLLECTION).doc(orderId);
+    const data = await firestore.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(reference);
+      if (!snapshot.exists) throw new NotFoundException('Order not found');
+      const current = snapshot.data() as DocumentData;
+      const status = this.stringValue(current.status) || 'placed';
+      if (status === nextStatus) return current;
+      if (!allowedStatuses.includes(status)) {
+        throw new ConflictException(
+          `Order cannot move from ${status} to ${nextStatus}.`,
+        );
+      }
+      const update = {
+        status: nextStatus,
+        updated_at: Timestamp.now(),
+        fulfillment_updated_by: actor,
+      };
+      transaction.update(reference, update);
+      return { ...current, ...update };
+    });
+    return this.toBusinessOrder(orderId, data);
   }
 
   private normalizeAddress(address: OrderAddressDto) {
@@ -297,6 +478,52 @@ export class OrderService {
       paymentMethod: this.stringValue(data.payment_method) || 'offline_pending',
       createdAt: this.toIsoDate(data.created_at),
       updatedAt: this.toIsoDate(data.updated_at),
+    };
+  }
+
+  private toCustomerOrder(id: string, data: DocumentData): CustomerOrderDto {
+    const rawItems = Array.isArray(data.items) ? data.items : [];
+    const rawTotals = this.objectValue(data.totals);
+    const items = rawItems.map((value) => {
+      const item = this.objectValue(value);
+      return {
+        product_id: this.stringValue(item.product_id),
+        name: this.stringValue(item.name),
+        ...(this.stringValue(item.sku)
+          ? { sku: this.stringValue(item.sku) }
+          : {}),
+        ...(this.stringValue(item.model_number)
+          ? { model_number: this.stringValue(item.model_number) }
+          : {}),
+        quantity: this.numberValue(item.quantity),
+        unit_price: this.numberValue(item.unit_price),
+        line_total: this.numberValue(item.line_total),
+        currency: this.stringValue(item.currency) || 'INR',
+      };
+    });
+
+    return {
+      order_id: this.stringValue(data.order_id) || id,
+      reference: this.stringValue(data.reference) || id,
+      status: this.stringValue(data.status) || 'placed',
+      payment_status: this.stringValue(data.payment_status) || 'pending',
+      items,
+      item_count: items.reduce((count, item) => count + item.quantity, 0),
+      totals: Object.fromEntries(
+        Object.entries(rawTotals).map(([currency, value]) => {
+          const total = this.objectValue(value);
+          return [
+            currency,
+            {
+              subtotal: this.numberValue(total.subtotal),
+              shipping: this.numberValue(total.shipping),
+              total: this.numberValue(total.total),
+            },
+          ];
+        }),
+      ),
+      created_at: this.toIsoDate(data.created_at),
+      updated_at: this.toIsoDate(data.updated_at),
     };
   }
 

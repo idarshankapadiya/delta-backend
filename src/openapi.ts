@@ -19,6 +19,10 @@ function createOpenApiConfig() {
     .addTag('System', 'API discovery and health endpoints.')
     .addTag('Products', 'Public product discovery endpoints.')
     .addTag('Customer Cart', 'Authenticated customer cart endpoints.')
+    .addTag(
+      'Customer Orders',
+      'Authenticated customer checkout and order-history endpoints.',
+    )
     .addTag('Catalog', 'Public catalog and access endpoints.')
     .addTag('Contact Messages', 'Public contact form submission.')
     .addTag('Quotations', 'Public cart validation and quotation submission.')
@@ -27,11 +31,19 @@ function createOpenApiConfig() {
       'Business dashboard authentication and session endpoints.',
     )
     .addTag('Business Products', 'Authenticated product administration.')
+    .addTag(
+      'Business Inventory',
+      'Authenticated stock levels, receipts, counts, adjustments, movements, and order fulfillment.',
+    )
     .addTag('Business Catalog', 'Authenticated catalog administration.')
     .addTag('Business Messages', 'Authenticated contact message management.')
     .addTag(
       'Business Quotations',
       'Authenticated quotation workflow management.',
+    )
+    .addTag(
+      'Business Orders',
+      'Authenticated customer-order fulfillment and stock transitions.',
     )
     .addTag('Internal Catalog', 'Service-to-service catalog administration.')
     .addTag('Internal Messages', 'Service-to-service message access.')

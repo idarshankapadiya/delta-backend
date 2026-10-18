@@ -84,7 +84,8 @@ describe('AppController (e2e)', () => {
       .expect('Content-Type', /application\/json/);
     const document = jsonResponse.body as OpenAPIObject;
     expect(document.openapi).toBe('3.0.0');
-    expect(Object.keys(document.paths)).toHaveLength(57);
+    expect(Object.keys(document.paths)).toHaveLength(69);
+    expect(document.paths['/api/orders']?.get).toBeDefined();
     expect(document.paths['/api/cart']?.get).toBeDefined();
     expect(document.paths['/api/cart']?.delete).toBeDefined();
     expect(document.paths['/api/cart/items/{productId}']?.put).toBeDefined();
@@ -107,6 +108,16 @@ describe('AppController (e2e)', () => {
       ];
     expect(additionalImagePath?.put).toBeDefined();
     expect(additionalImagePath?.delete).toBeDefined();
+    expect(document.paths['/api/business/inventory']?.get).toBeDefined();
+    expect(
+      document.paths['/api/business/inventory/receipts']?.post,
+    ).toBeDefined();
+    expect(
+      document.paths['/api/business/orders/{orderId}/confirm']?.post,
+    ).toBeDefined();
+    expect(
+      document.paths['/api/business/orders/{orderId}/dispatch']?.post,
+    ).toBeDefined();
 
     await request(app.getHttpServer())
       .get('/api/docs/openapi.yaml')
@@ -178,6 +189,18 @@ describe('AppController (e2e)', () => {
       ['GET', '/api/business/quotation-requests/:quotationId'],
       ['PATCH', '/api/business/quotation-requests/:quotationId/status'],
       ['GET', '/api/business/orders'],
+      ['POST', '/api/business/orders/:orderId/confirm'],
+      ['POST', '/api/business/orders/:orderId/dispatch'],
+      ['POST', '/api/business/orders/:orderId/cancel'],
+      ['POST', '/api/business/orders/:orderId/return'],
+      ['GET', '/api/business/inventory'],
+      ['GET', '/api/business/inventory/low-stock'],
+      ['GET', '/api/business/inventory/movements'],
+      ['GET', '/api/business/inventory/:productId'],
+      ['POST', '/api/business/inventory/receipts'],
+      ['POST', '/api/business/inventory/:productId/adjustments'],
+      ['POST', '/api/business/inventory/:productId/stock-counts'],
+      ['PUT', '/api/business/inventory/:productId/settings'],
       ['GET', '/api/internal/messages'],
       ['POST', '/api/internal/catalog/documents'],
       ['PUT', '/api/internal/catalog/documents/:document_id'],

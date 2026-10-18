@@ -78,6 +78,29 @@ Set `CART_STORE=memory` for local development without cart persistence. Tests
 use the memory store automatically. Production carts require
 `FIRESTORE_DATABASE_ID`.
 
+## Product discount policy
+
+Set the same flag in the backend `.env` and the storefront `.env.local`:
+
+```dotenv
+VITE_DISCOUNTS_ENABLED=false
+```
+
+`false` disables discounts for cart-validation totals, new quotations, and new
+orders. Product totals use original price × quantity; saved line items record
+an applied discount of zero. Order shipping is added separately. `true` or an
+unset variable keeps catalog discounts enabled, matching the storefront default.
+
+The backend reads its own environment independently of Vite. Restart the backend
+and frontend development servers after changing their environment files. For
+production, set the same value in the backend service environment and the
+frontend build environment, then rebuild the frontend. Changing the frontend
+variable alone does not configure the backend. Prices and discount policy are
+always determined on the server, never from request fields.
+
+Catalog discounts remain stored so they can be enabled again. Existing orders,
+quotation snapshots, and idempotent order retries retain their saved prices.
+
 ## Customer orders
 
 `POST /api/orders` snapshots the authenticated customer's validated cart into
