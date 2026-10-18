@@ -1,0 +1,3378 @@
+openapi: 3.0.0
+paths:
+  /api/business/auth/google:
+    post:
+      operationId: BusinessAuth_authenticateWithGoogle
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BusinessGoogleAuthDto"
+      responses:
+        "201":
+          description: ""
+      summary: Create a business session with Google
+      tags:
+        - Business Authentication
+  /api/business/auth/me:
+    get:
+      operationId: BusinessAuth_getCurrentUser
+      parameters: []
+      responses:
+        "200":
+          description: ""
+      security:
+        - businessSession: []
+      summary: Get the current business session
+      tags:
+        - Business Authentication
+  /api/business/auth/logout:
+    post:
+      operationId: BusinessAuth_logout
+      parameters: []
+      responses:
+        "201":
+          description: ""
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Log out of the business session
+      tags:
+        - Business Authentication
+  /api/business/catalog/all:
+    get:
+      operationId: BusinessCatalog_getCatalogAll
+      parameters: []
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+      security:
+        - businessSession: []
+      summary: Get catalog data for business administration
+      tags:
+        - Business Catalog
+  /api/business/catalog/documents:
+    post:
+      operationId: BusinessCatalog_createDocument
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - company_name
+                - document_name
+                - file
+              properties:
+                company_name:
+                  type: string
+                category_name:
+                  type: string
+                document_name:
+                  type: string
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Upload a catalog PDF document
+      tags:
+        - Business Catalog
+  /api/business/catalog/documents/access:
+    post:
+      operationId: BusinessCatalog_createDocumentAccess
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DocumentAccessDto"
+      responses:
+        "201":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Create an administrative signed document URL
+      tags:
+        - Business Catalog
+  /api/business/catalog/documents/{document_id}:
+    put:
+      operationId: BusinessCatalog_updateDocument
+      parameters:
+        - name: document_id
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                document_name:
+                  type: string
+                category_name:
+                  type: string
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Update or replace a catalog PDF document
+      tags:
+        - Business Catalog
+    delete:
+      operationId: BusinessCatalog_deleteDocument
+      parameters:
+        - name: document_id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Delete a catalog document
+      tags:
+        - Business Catalog
+  /api/business/catalog/companies/{company_slug}:
+    put:
+      operationId: BusinessCatalog_updateCompany
+      parameters:
+        - name: company_slug
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCatalogCompanyDto"
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Rename or merge a catalog company
+      tags:
+        - Business Catalog
+  /api/business/messages:
+    get:
+      operationId: BusinessMessage_getMessages
+      parameters: []
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+      security:
+        - businessSession: []
+      summary: List contact messages
+      tags:
+        - Business Messages
+  /api/business/messages/{message_id}:
+    delete:
+      operationId: BusinessMessage_deleteMessage
+      parameters:
+        - name: message_id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Delete a contact message
+      tags:
+        - Business Messages
+  /api/business/orders:
+    get:
+      operationId: BusinessOrder_getOrders
+      parameters: []
+      responses:
+        "200":
+          description: Up to 200 latest placed customer orders.
+      security:
+        - businessSession: []
+      summary: List placed customer orders newest first
+      tags:
+        - Business Orders
+  /api/business/orders/{orderId}/confirm:
+    post:
+      description: Idempotently reserves every line item. Insufficient availability
+        moves the order to pending_stock and returns 409.
+      operationId: BusinessOrder_confirm
+      parameters:
+        - name: orderId
+          required: true
+          in: path
+          schema:
+            maxLength: 160
+            type: string
+      responses:
+        "200":
+          description: Order confirmed and stock reserved.
+        "404":
+          description: Order or product not found.
+        "409":
+          description: Insufficient stock or invalid order state.
+      security:
+        - businessSession: []
+        - csrfToken: []
+      summary: Confirm an order and reserve available stock
+      tags:
+        - Business Orders
+  /api/business/orders/{orderId}/dispatch:
+    post:
+      operationId: BusinessOrder_dispatch
+      parameters:
+        - name: orderId
+          required: true
+          in: path
+          schema:
+            maxLength: 160
+            type: string
+      responses:
+        "200":
+          description: Order dispatched and on-hand stock reduced.
+        "409":
+          description: Order is not confirmed.
+      security:
+        - businessSession: []
+        - csrfToken: []
+      summary: Dispatch an order and consume its reserved stock
+      tags:
+        - Business Orders
+  /api/business/orders/{orderId}/cancel:
+    post:
+      operationId: BusinessOrder_cancel
+      parameters:
+        - name: orderId
+          required: true
+          in: path
+          schema:
+            maxLength: 160
+            type: string
+      responses:
+        "200":
+          description: Order cancelled and reserved stock released.
+        "409":
+          description: Dispatched or returned order cannot be cancelled.
+      security:
+        - businessSession: []
+        - csrfToken: []
+      summary: Cancel an order and release any reservation
+      tags:
+        - Business Orders
+  /api/business/orders/{orderId}/return:
+    post:
+      description: Use only after returned goods have passed inspection.
+      operationId: BusinessOrder_returnOrder
+      parameters:
+        - name: orderId
+          required: true
+          in: path
+          schema:
+            maxLength: 160
+            type: string
+      responses:
+        "200":
+          description: Order returned and on-hand stock restored.
+        "409":
+          description: Order has not been dispatched.
+      security:
+        - businessSession: []
+        - csrfToken: []
+      summary: Return all order items to sellable stock
+      tags:
+        - Business Orders
+  /api/business/inventory:
+    get:
+      description: Returns on-hand, reserved, available, incoming, damaged and reorder
+        quantities. Legacy product stock is used until its first ledger
+        mutation.
+      operationId: BusinessInventory_getInventory
+      parameters: []
+      responses:
+        "200":
+          description: Inventory sorted by product name.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InventoryListResponseDto"
+      security:
+        - businessSession: []
+      summary: List inventory for active products
+      tags:
+        - Business Inventory
+  /api/business/inventory/low-stock:
+    get:
+      operationId: BusinessInventory_getLowStock
+      parameters: []
+      responses:
+        "200":
+          description: Products at or below their reorder level.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InventoryListResponseDto"
+      security:
+        - businessSession: []
+      summary: List low-stock and out-of-stock products
+      tags:
+        - Business Inventory
+  /api/business/inventory/movements:
+    get:
+      operationId: BusinessInventory_getMovements
+      parameters:
+        - name: productId
+          required: false
+          in: query
+          schema:
+            type: string
+        - name: limit
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            maximum: 500
+            default: 100
+            type: number
+      responses:
+        "200":
+          description: Newest stock movements first.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InventoryMovementListResponseDto"
+      security:
+        - businessSession: []
+      summary: List immutable stock movement history
+      tags:
+        - Business Inventory
+  /api/business/inventory/{productId}:
+    get:
+      operationId: BusinessInventory_getProductInventory
+      parameters:
+        - name: productId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InventoryItemResponseDto"
+        "404":
+          description: Product not found.
+      security:
+        - businessSession: []
+      summary: Get inventory for one product
+      tags:
+        - Business Inventory
+  /api/business/inventory/receipts:
+    post:
+      description: Atomically increases on-hand stock, updates public availability,
+        and appends a purchase receipt movement.
+      operationId: BusinessInventory_receive
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReceiveStockDto"
+      responses:
+        "201":
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InventoryItemResponseDto"
+        "409":
+          description: The resulting stock state is invalid.
+      security:
+        - businessSession: []
+        - csrfToken: []
+      summary: Receive purchased stock
+      tags:
+        - Business Inventory
+  /api/business/inventory/{productId}/adjustments:
+    post:
+      description: Applies a signed manual or damage adjustment and records the
+        before/after quantities in the immutable ledger.
+      operationId: BusinessInventory_adjust
+      parameters:
+        - name: productId
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdjustStockDto"
+      responses:
+        "201":
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InventoryItemResponseDto"
+        "409":
+          description: Adjustment would make stock negative.
+      security:
+        - businessSession: []
+        - csrfToken: []
+      summary: Adjust stock with a mandatory reason
+      tags:
+        - Business Inventory
+  /api/business/inventory/{productId}/stock-counts:
+    post:
+      operationId: BusinessInventory_count
+      parameters:
+        - name: productId
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StockCountDto"
+      responses:
+        "201":
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InventoryItemResponseDto"
+        "409":
+          description: Count is below already reserved stock.
+      security:
+        - businessSession: []
+        - csrfToken: []
+      summary: Reconcile stock to a physical count
+      tags:
+        - Business Inventory
+  /api/business/inventory/{productId}/settings:
+    put:
+      operationId: BusinessInventory_updateSettings
+      parameters:
+        - name: productId
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateInventorySettingsDto"
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InventoryItemResponseDto"
+      security:
+        - businessSession: []
+        - csrfToken: []
+      summary: Set the product reorder level
+      tags:
+        - Business Inventory
+  /api/business/companies:
+    post:
+      operationId: BusinessProduct_createCompany
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProductCompanyDto"
+      responses:
+        "201":
+          description: ""
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Create a product company
+      tags:
+        - Business Products
+  /api/business/companies/{companyId}:
+    put:
+      operationId: BusinessProduct_updateCompany
+      parameters:
+        - name: companyId
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProductCompanyDto"
+      responses:
+        "200":
+          description: ""
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Update a product company
+      tags:
+        - Business Products
+    delete:
+      description: Deletes a company only when no products reference it, removes the
+        company from linked categories, and clears its product and thumbnail
+        storage prefixes, including empty folders.
+      operationId: BusinessProduct_deleteCompany
+      parameters:
+        - name: companyId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The unused company, its owned storage prefixes, and its category
+            links were deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - deletedCompanyId
+                  - deletedAssets
+                  - updatedCategories
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  deletedCompanyId:
+                    type: string
+                  deletedAssets:
+                    type: integer
+                    minimum: 0
+                  updatedCategories:
+                    type: integer
+                    minimum: 0
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Delete an unused product company
+      tags:
+        - Business Products
+  /api/business/categories:
+    post:
+      operationId: BusinessProduct_createCategory
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProductCategoryDto"
+      responses:
+        "201":
+          description: ""
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Create a product category
+      tags:
+        - Business Products
+  /api/business/categories/{categoryId}:
+    put:
+      operationId: BusinessProduct_updateCategory
+      parameters:
+        - name: categoryId
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProductCategoryDto"
+      responses:
+        "200":
+          description: ""
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Update a product category
+      tags:
+        - Business Products
+    delete:
+      operationId: BusinessProduct_deleteCategory
+      parameters:
+        - name: categoryId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Delete an unused product category
+      tags:
+        - Business Products
+  /api/business/products:
+    post:
+      operationId: BusinessProduct_createProduct
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProductDto"
+      responses:
+        "201":
+          description: ""
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Create a product and optionally its company or category
+      tags:
+        - Business Products
+  /api/business/products/upload:
+    post:
+      operationId: BusinessProduct_createProductUpload
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - product
+                - main_image
+              properties:
+                product:
+                  type: string
+                  description: JSON-encoded CreateProductDto payload.
+                main_image:
+                  type: string
+                  format: binary
+                  description: Required JPEG, PNG, WebP, or AVIF main image. A WebP thumbnail is
+                    generated automatically.
+                additional_images:
+                  type: array
+                  maxItems: 20
+                  items:
+                    type: string
+                    format: binary
+                  description: Optional replacement additional product images.
+                brochure:
+                  type: string
+                  format: binary
+                  description: Optional PDF brochure.
+      responses:
+        "201":
+          description: ""
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Create a product and upload its assets
+      tags:
+        - Business Products
+  /api/business/products/{productId}:
+    put:
+      operationId: BusinessProduct_updateProduct
+      parameters:
+        - name: productId
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProductDto"
+      responses:
+        "200":
+          description: ""
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Update a product
+      tags:
+        - Business Products
+    delete:
+      description: Permanently deletes the selected product regardless of its stock
+        status and clears its complete product and thumbnail storage prefixes,
+        including empty folders. Its company and category are also deleted when
+        no other products reference them; deleting the last company product
+        clears the company storage prefixes. This action cannot be undone.
+      operationId: BusinessProduct_deleteProduct
+      parameters:
+        - name: productId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The product and its complete owned storage prefixes were
+            permanently deleted. Nullable relationship IDs identify any company
+            or category that was also deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - deletedProductId
+                  - deletedAssets
+                  - deletedCompanyId
+                  - deletedCategoryId
+                  - updatedCategories
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  deletedProductId:
+                    type: string
+                  deletedAssets:
+                    type: integer
+                    minimum: 0
+                    description: Number of stored objects removed from the product prefixes,
+                      including orphaned objects and folder markers.
+                  deletedCompanyId:
+                    type: string
+                    nullable: true
+                  deletedCategoryId:
+                    type: string
+                    nullable: true
+                  updatedCategories:
+                    type: integer
+                    minimum: 0
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Permanently delete a product
+      tags:
+        - Business Products
+  /api/business/products/{productId}/specifications/{key}:
+    put:
+      description: Updates an existing specification value and optionally renames its
+        key. Returns 404 when the product or specification does not exist and
+        409 when the new key already exists.
+      operationId: BusinessProduct_updateProductSpecification
+      parameters:
+        - name: productId
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: key
+          required: true
+          in: path
+          schema:
+            maxLength: 160
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - value
+              properties:
+                key:
+                  type: string
+                  minLength: 1
+                  maxLength: 160
+                value:
+                  description: String, number, boolean, or null.
+                  oneOf:
+                    - type: string
+                    - type: number
+                    - type: boolean
+                    - type: string
+                      nullable: true
+                      enum:
+                        - null
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - productId
+                  - key
+                  - value
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  productId:
+                    type: string
+                  key:
+                    type: string
+                  value:
+                    description: Updated specification value (string, number, boolean, or null).
+        "404":
+          description: Product or specification not found.
+        "409":
+          description: Replacement key already exists.
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Edit one product specification
+      tags:
+        - Business Products
+    delete:
+      description: Removes an existing specification. Returns 404 when the product or
+        specification does not exist.
+      operationId: BusinessProduct_deleteProductSpecification
+      parameters:
+        - name: productId
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: key
+          required: true
+          in: path
+          schema:
+            maxLength: 160
+            type: string
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - productId
+                  - deletedKey
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  productId:
+                    type: string
+                  deletedKey:
+                    type: string
+        "404":
+          description: Product or specification not found.
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Delete one product specification
+      tags:
+        - Business Products
+  /api/business/products/{productId}/upload:
+    put:
+      operationId: BusinessProduct_updateProductUpload
+      parameters:
+        - name: productId
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - product
+              properties:
+                product:
+                  type: string
+                  description: JSON-encoded UpdateProductDto payload.
+                main_image:
+                  type: string
+                  format: binary
+                  description: Optional replacement main image. A replacement WebP thumbnail is
+                    generated automatically.
+                additional_images:
+                  type: array
+                  maxItems: 20
+                  items:
+                    type: string
+                    format: binary
+                  description: Optional replacement additional product images.
+                brochure:
+                  type: string
+                  format: binary
+                  description: Optional PDF brochure.
+      responses:
+        "200":
+          description: ""
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Update a product and upload replacement assets
+      tags:
+        - Business Products
+  /api/business/products/{productId}/main-image:
+    put:
+      operationId: BusinessProduct_replaceMainImage
+      parameters:
+        - name: productId
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - image
+              properties:
+                image:
+                  type: string
+                  format: binary
+                  description: One JPEG, PNG, WebP, or AVIF image, up to 20 MB.
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - productId
+                  - image
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  productId:
+                    type: string
+                  image:
+                    type: string
+                    enum:
+                      - main
+                      - additional
+                  index:
+                    type: integer
+                    minimum: 0
+                    description: Zero-based additional image index.
+                  deletedAssets:
+                    type: integer
+                    minimum: 0
+        "404":
+          description: Product not found.
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Replace the main image and regenerate its WebP thumbnail
+      tags:
+        - Business Products
+    delete:
+      description: Removes the main image and thumbnail objects and clears current and
+        legacy image references from the product.
+      operationId: BusinessProduct_deleteMainImage
+      parameters:
+        - name: productId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - productId
+                  - image
+                  - deletedAssets
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  productId:
+                    type: string
+                  image:
+                    type: string
+                    enum:
+                      - main
+                      - additional
+                  index:
+                    type: integer
+                    minimum: 0
+                    description: Zero-based additional image index.
+                  deletedAssets:
+                    type: integer
+                    minimum: 0
+        "404":
+          description: Product or main image not found.
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Delete the main image and generated thumbnail
+      tags:
+        - Business Products
+  /api/business/products/{productId}/additional-images:
+    post:
+      operationId: BusinessProduct_addAdditionalImage
+      parameters:
+        - name: productId
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - image
+              properties:
+                image:
+                  type: string
+                  format: binary
+                  description: One JPEG, PNG, WebP, or AVIF image, up to 20 MB.
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - productId
+                  - image
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  productId:
+                    type: string
+                  image:
+                    type: string
+                    enum:
+                      - main
+                      - additional
+                  index:
+                    type: integer
+                    minimum: 0
+                    description: Zero-based additional image index.
+                  deletedAssets:
+                    type: integer
+                    minimum: 0
+        "404":
+          description: Product not found.
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Append one additional image (maximum 20)
+      tags:
+        - Business Products
+  /api/business/products/{productId}/additional-images/{index}:
+    put:
+      operationId: BusinessProduct_replaceAdditionalImage
+      parameters:
+        - name: productId
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: index
+          required: true
+          in: path
+          schema:
+            pattern: ^(0|[1-9][0-9]*)$
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - image
+              properties:
+                image:
+                  type: string
+                  format: binary
+                  description: One JPEG, PNG, WebP, or AVIF image, up to 20 MB.
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - productId
+                  - image
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  productId:
+                    type: string
+                  image:
+                    type: string
+                    enum:
+                      - main
+                      - additional
+                  index:
+                    type: integer
+                    minimum: 0
+                    description: Zero-based additional image index.
+                  deletedAssets:
+                    type: integer
+                    minimum: 0
+        "404":
+          description: Product or image index not found.
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Replace one additional image by its zero-based index
+      tags:
+        - Business Products
+    delete:
+      operationId: BusinessProduct_deleteAdditionalImage
+      parameters:
+        - name: productId
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: index
+          required: true
+          in: path
+          schema:
+            pattern: ^(0|[1-9][0-9]*)$
+            type: string
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - productId
+                  - image
+                  - deletedAssets
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  productId:
+                    type: string
+                  image:
+                    type: string
+                    enum:
+                      - main
+                      - additional
+                  index:
+                    type: integer
+                    minimum: 0
+                    description: Zero-based additional image index.
+                  deletedAssets:
+                    type: integer
+                    minimum: 0
+        "404":
+          description: Product or image index not found.
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Delete one additional image by its zero-based index
+      tags:
+        - Business Products
+  /api/business/products/out-of-stock/{productId}:
+    delete:
+      description: Deletes the product only when it is out of stock and clears its
+        complete product and thumbnail storage prefixes, including empty
+        folders. Its company and category are also deleted when no other
+        products reference them; deleting the last company product clears the
+        company storage prefixes.
+      operationId: BusinessProduct_deleteOutOfStockProduct
+      parameters:
+        - name: productId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The product was deleted. Nullable relationship IDs identify any
+            company or category that was also deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - deletedProductId
+                  - deletedAssets
+                  - deletedCompanyId
+                  - deletedCategoryId
+                  - updatedCategories
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  deletedProductId:
+                    type: string
+                  deletedAssets:
+                    type: integer
+                    minimum: 0
+                    description: Number of stored objects removed from the product prefixes,
+                      including orphaned objects and folder markers.
+                  deletedCompanyId:
+                    type: string
+                    nullable: true
+                  deletedCategoryId:
+                    type: string
+                    nullable: true
+                  updatedCategories:
+                    type: integer
+                    minimum: 0
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Delete an out-of-stock product and unused relationships
+      tags:
+        - Business Products
+  /api/business/quotation-requests:
+    get:
+      operationId: BusinessQuotation_getQuotations
+      parameters: []
+      responses:
+        "200":
+          description: Up to 200 latest quotation requests.
+      security:
+        - businessSession: []
+      summary: List quotation requests newest first
+      tags:
+        - Business Quotations
+  /api/business/quotation-requests/{quotationId}:
+    get:
+      operationId: BusinessQuotation_getQuotation
+      parameters:
+        - name: quotationId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+        "404":
+          description: Quotation request not found.
+      security:
+        - businessSession: []
+      summary: Get one quotation request
+      tags:
+        - Business Quotations
+  /api/business/quotation-requests/{quotationId}/status:
+    patch:
+      operationId: BusinessQuotation_updateStatus
+      parameters:
+        - name: quotationId
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateQuotationStatusDto"
+      responses:
+        "200":
+          description: Quotation status updated.
+        "404":
+          description: Quotation request not found.
+      security:
+        - businessSession: []
+          csrfToken: []
+      summary: Update quotation workflow status
+      tags:
+        - Business Quotations
+  /api/business/users:
+    get:
+      operationId: BusinessUser_getUsers
+      parameters: []
+      responses:
+        "200":
+          description: Up to 500 catalog users, newest login first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - users
+                properties:
+                  users:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - customer_id
+                        - email
+                        - mobile
+                        - name
+                        - profile_complete
+                        - created_at
+                        - last_login_at
+                      properties:
+                        customer_id:
+                          type: string
+                        email:
+                          type: string
+                          nullable: true
+                        mobile:
+                          type: string
+                          nullable: true
+                        name:
+                          type: string
+                        profile_complete:
+                          type: boolean
+                        created_at:
+                          type: string
+                          format: date-time
+                        last_login_at:
+                          type: string
+                          format: date-time
+      security:
+        - businessSession: []
+      summary: List catalog users by latest login
+      tags:
+        - Business Users
+  /api/catalog/all:
+    get:
+      operationId: Catalog_getCatalogAll
+      parameters: []
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+      summary: Get public catalog navigation
+      tags:
+        - Catalog
+  /api/catalog/library:
+    post:
+      operationId: Catalog_getCatalogLibrary
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CatalogLibraryDto"
+      responses:
+        "201":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+      summary: Get selected company catalog libraries
+      tags:
+        - Catalog
+  /api/catalog/access:
+    post:
+      operationId: Catalog_createAccess
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CatalogAccessDto"
+      responses:
+        "201":
+          description: ""
+      summary: Record a catalog access inquiry
+      tags:
+        - Catalog
+  /api/catalog/access/google:
+    post:
+      operationId: Catalog_createGoogleAccess
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CatalogGoogleAccessDto"
+      responses:
+        "201":
+          description: ""
+      summary: Create catalog access with Google
+      tags:
+        - Catalog
+  /api/catalog/access/firebase/email-link:
+    post:
+      operationId: Catalog_createFirebaseEmailAccess
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CatalogFirebaseAccessDto"
+      responses:
+        "201":
+          description: ""
+      summary: Create catalog access from a Firebase email link
+      tags:
+        - Catalog
+  /api/catalog/access/google/redirect:
+    post:
+      operationId: Catalog_createGoogleRedirectAccess
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/schemas/CatalogGoogleRedirectDto"
+      responses:
+        "303":
+          description: Redirect to the frontend home page.
+      summary: Handle Google catalog access redirect
+      tags:
+        - Catalog
+  /api/catalog/access/me:
+    get:
+      operationId: Catalog_getAccessMe
+      parameters: []
+      responses:
+        "200":
+          description: ""
+      security:
+        - catalogAccess: []
+      summary: Get the current catalog access session
+      tags:
+        - Catalog
+    post:
+      description: Read-only session lookup using POST so browsers include Origin on
+        same-origin requests. Requires an allowed public Origin and a valid
+        catalog_access cookie. Does not create or extend the session.
+      operationId: Catalog_restoreAccessSession
+      parameters: []
+      responses:
+        "200":
+          description: Current authenticated session.
+        "401":
+          description: Missing, expired, or invalid session.
+        "403":
+          description: Missing or disallowed public Origin.
+      security:
+        - catalogAccess: []
+      summary: Restore the current catalog access session
+      tags:
+        - Catalog
+  /api/catalog/access/otp/request:
+    post:
+      operationId: Catalog_requestAccessOtp
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CatalogOtpRequestDto"
+      responses:
+        "201":
+          description: ""
+      summary: Request a catalog access OTP
+      tags:
+        - Catalog
+  /api/catalog/access/otp/verify:
+    post:
+      operationId: Catalog_verifyAccessOtp
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CatalogVerifyOtpDto"
+      responses:
+        "201":
+          description: ""
+      summary: Verify a catalog access OTP
+      tags:
+        - Catalog
+  /api/catalog/access/otp/resend:
+    post:
+      operationId: Catalog_resendAccessOtp
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CatalogResendOtpDto"
+      responses:
+        "201":
+          description: ""
+      summary: Resend a catalog access OTP
+      tags:
+        - Catalog
+  /api/catalog/documents/access:
+    post:
+      operationId: Catalog_createDocumentAccess
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DocumentAccessDto"
+      responses:
+        "201":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+      summary: Create a signed catalog document URL
+      tags:
+        - Catalog
+  /api/catalog/access/logout:
+    post:
+      operationId: Catalog_logoutAccess
+      parameters: []
+      responses:
+        "201":
+          description: ""
+      security:
+        - catalogAccess: []
+      summary: Log out of catalog access
+      tags:
+        - Catalog
+  /api/message:
+    post:
+      operationId: Message_createMessage
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMessageDto"
+      responses:
+        "201":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+      summary: Submit a public contact message
+      tags:
+        - Contact Messages
+  /api/companies:
+    get:
+      operationId: Product_getCompanies
+      parameters: []
+      responses:
+        "200":
+          description: ""
+      summary: List active product companies
+      tags:
+        - Products
+  /api/categories:
+    get:
+      operationId: Product_getCategories
+      parameters:
+        - name: companyId
+          required: false
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+      summary: List active product categories
+      tags:
+        - Products
+  /api/products:
+    get:
+      operationId: Product_getProducts
+      parameters:
+        - name: companyId
+          required: false
+          in: query
+          schema:
+            type: string
+        - name: categoryId
+          required: false
+          in: query
+          schema:
+            type: string
+        - name: subcategoryId
+          required: false
+          in: query
+          schema:
+            type: string
+        - name: stock
+          required: false
+          in: query
+          schema:
+            type: string
+            enum:
+              - in_stock
+              - out_of_stock
+        - name: search
+          required: false
+          in: query
+          schema:
+            maxLength: 120
+            type: string
+        - name: sort
+          required: true
+          in: query
+          schema:
+            default: name_asc
+            type: string
+            enum:
+              - name_asc
+              - name_desc
+              - price_asc
+              - price_desc
+        - name: limit
+          required: true
+          in: query
+          schema:
+            minimum: 1
+            maximum: 100
+            default: 30
+            allOf:
+              - $ref: "#/components/schemas/Object"
+        - name: cursor
+          required: false
+          in: query
+          schema:
+            maxLength: 2048
+            type: string
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+      summary: List and filter active products
+      tags:
+        - Products
+  /api/products/{productId}:
+    get:
+      description: Returns mainImageUrl, additionalImageUrls, and parallel
+        additionalImageIndices. Each index identifies the stored additional
+        image for the business replace and delete endpoints.
+      operationId: Product_getProduct
+      parameters:
+        - name: productId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+      summary: Get active product details
+      tags:
+        - Products
+  /api/cart:
+    get:
+      operationId: Cart_getCart
+      parameters:
+        - name: X-Expected-Customer-Id
+          in: header
+          description: Optional race-condition guard. When provided, it must equal the
+            customer in the authenticated session; it never selects cart
+            ownership.
+          required: false
+          schema:
+            type: string
+        - name: x-expected-customer-id
+          required: true
+          in: header
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerCartResponseDto"
+        "401":
+          description: Catalog access is required.
+      security:
+        - catalogAccess: []
+      summary: Get the authenticated customer's cart
+      tags:
+        - Customer Cart
+    delete:
+      operationId: Cart_clearCart
+      parameters:
+        - name: X-Expected-Customer-Id
+          in: header
+          description: Optional race-condition guard. When provided, it must equal the
+            customer in the authenticated session; it never selects cart
+            ownership.
+          required: false
+          schema:
+            type: string
+        - name: x-expected-customer-id
+          required: true
+          in: header
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerCartResponseDto"
+        "401":
+          description: Catalog access is required.
+      security:
+        - catalogAccess: []
+      summary: Clear the authenticated customer's cart
+      tags:
+        - Customer Cart
+  /api/cart/items/{productId}:
+    put:
+      description: Validates the active product and stock, clamps quantity to the
+        available stock limit, and returns the complete normalized cart.
+      operationId: Cart_setItem
+      parameters:
+        - name: X-Expected-Customer-Id
+          in: header
+          description: Optional race-condition guard. When provided, it must equal the
+            customer in the authenticated session; it never selects cart
+            ownership.
+          required: false
+          schema:
+            type: string
+        - name: productId
+          required: true
+          in: path
+          schema:
+            example: compact-nsx-100
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetCartItemDto"
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerCartResponseDto"
+        "400":
+          description: Invalid product ID or quantity.
+        "401":
+          description: Catalog access is required.
+        "404":
+          description: Product not found.
+        "409":
+          description: Product is unavailable or the cart item limit was reached.
+      security:
+        - catalogAccess: []
+      summary: Set the absolute quantity of one cart product
+      tags:
+        - Customer Cart
+    delete:
+      operationId: Cart_removeItem
+      parameters:
+        - name: X-Expected-Customer-Id
+          in: header
+          description: Optional race-condition guard. When provided, it must equal the
+            customer in the authenticated session; it never selects cart
+            ownership.
+          required: false
+          schema:
+            type: string
+        - name: productId
+          required: true
+          in: path
+          schema:
+            example: compact-nsx-100
+            type: string
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerCartResponseDto"
+        "400":
+          description: Invalid product ID.
+        "401":
+          description: Catalog access is required.
+      security:
+        - catalogAccess: []
+      summary: Remove one product from the cart
+      tags:
+        - Customer Cart
+  /api/cart/merge:
+    post:
+      description: Uses maximum_quantity semantics, making retries and simultaneous
+        tab submissions idempotent.
+      operationId: Cart_mergeCart
+      parameters:
+        - name: X-Expected-Customer-Id
+          in: header
+          description: Optional race-condition guard. When provided, it must equal the
+            customer in the authenticated session; it never selects cart
+            ownership.
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MergeCartDto"
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerCartResponseDto"
+        "400":
+          description: Invalid merge request.
+        "401":
+          description: Catalog access is required.
+        "404":
+          description: One or more products were not found.
+        "409":
+          description: A product is unavailable, the customer guard mismatched, or the
+            cart item limit was reached.
+      security:
+        - catalogAccess: []
+      summary: Merge a pre-login anonymous cart into the customer cart
+      tags:
+        - Customer Cart
+  /api/orders:
+    get:
+      description: Returns only orders owned by the customer in the authenticated
+        catalog session, newest first. The customer header is a race-condition
+        guard and never selects ownership.
+      operationId: Order_getOrders
+      parameters:
+        - name: X-Expected-Customer-Id
+          in: header
+          description: Must equal the customer in the authenticated session.
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Up to 100 orders owned by the authenticated customer.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerOrdersResponseDto"
+        "401":
+          description: Catalog access is required.
+        "409":
+          description: The authenticated customer changed.
+      security:
+        - catalogAccess: []
+      summary: List the authenticated customer's orders
+      tags:
+        - Customer Orders
+    post:
+      description: Snapshots validated cart pricing into Firestore, records payment as
+        pending, and clears the cart. orderRequestId makes retries idempotent.
+        VITE_DISCOUNTS_ENABLED=false on the backend disables product discounts
+        and uses original product prices; true or unset applies catalog
+        discounts. Saved snapshots record the applied discount (zero when
+        disabled). Existing snapshots are not repriced. Shipping is added
+        separately. Client prices and discount flags are never accepted.
+      operationId: Order_createOrder
+      parameters:
+        - name: X-Expected-Customer-Id
+          in: header
+          description: Must equal the customer in the authenticated session.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateOrderDto"
+      responses:
+        "201":
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateOrderResponseDto"
+        "400":
+          description: Invalid checkout details or empty cart.
+        "401":
+          description: Catalog access is required.
+        "409":
+          description: The authenticated customer changed.
+      security:
+        - catalogAccess: []
+      summary: Place the authenticated customer's order
+      tags:
+        - Customer Orders
+  /api/products/cart-validation:
+    post:
+      description: VITE_DISCOUNTS_ENABLED=false on the backend disables product
+        discounts and uses original product prices; true or unset applies
+        catalog discounts. Saved snapshots record the applied discount (zero
+        when disabled). Existing snapshots are not repriced. Client prices and
+        discount flags are never accepted.
+      operationId: Quotation_validateCart
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ValidateCartDto"
+      responses:
+        "200":
+          description: Authoritative cart validation result.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - valid
+                  - items
+                  - issues
+                  - totals
+                properties:
+                  valid:
+                    type: boolean
+                    example: true
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - productId
+                        - quantity
+                        - product
+                      properties:
+                        productId:
+                          type: string
+                          example: compact-nsx-100
+                        quantity:
+                          type: integer
+                          example: 2
+                        product:
+                          type: object
+                          description: Current public product snapshot including price, currency,
+                            discount, inStock, and optional stockQuantity.
+                  issues:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - productId
+                        - code
+                        - message
+                      properties:
+                        productId:
+                          type: string
+                        code:
+                          type: string
+                          enum:
+                            - duplicate
+                            - not_found
+                            - out_of_stock
+                            - quantity_unavailable
+                        message:
+                          type: string
+                  totals:
+                    type: object
+                    additionalProperties:
+                      type: number
+                    example:
+                      INR: 18450
+      summary: Validate cart products, quantities, availability, and current totals
+      tags:
+        - Quotations
+  /api/quotation-requests:
+    post:
+      description: Revalidates product availability, stock quantity, prices,
+        discounts, and currency on the server before saving the quotation.
+        Client totals and discount flags are never accepted.
+        VITE_DISCOUNTS_ENABLED=false on the backend disables product discounts
+        and uses original product prices; true or unset applies catalog
+        discounts. Saved snapshots record the applied discount (zero when
+        disabled). Existing snapshots are not repriced.
+      operationId: Quotation_createQuotation
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateQuotationRequestDto"
+      responses:
+        "201":
+          description: Quotation request saved.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - quotation
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  quotation:
+                    type: object
+                    required:
+                      - id
+                      - reference
+                      - status
+                      - customer
+                      - items
+                      - totals
+                      - created_at
+                      - updated_at
+                    properties:
+                      id:
+                        type: string
+                        example: QUO-01K5ABCDEF0123456789ABCDE
+                      reference:
+                        type: string
+                        example: QUO-01K5ABCDEF0123456789ABCDE
+                      status:
+                        type: string
+                        example: new
+                      customer:
+                        type: object
+                      items:
+                        type: array
+                        items:
+                          type: object
+                      totals:
+                        type: object
+                        additionalProperties:
+                          type: number
+                        example:
+                          INR: 18450
+                      notes:
+                        type: string
+                      created_at:
+                        type: string
+                        format: date-time
+                      updated_at:
+                        type: string
+                        format: date-time
+        "409":
+          description: One or more cart products or quantities are no longer available.
+        "429":
+          description: Quotation submission limit exceeded.
+      summary: Create a quotation request from an authoritative cart snapshot
+      tags:
+        - Quotations
+  /api/internal/catalog/documents:
+    post:
+      operationId: InternalCatalog_createDocument
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - company_name
+                - document_name
+                - file
+              properties:
+                company_name:
+                  type: string
+                category_name:
+                  type: string
+                document_name:
+                  type: string
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+      security:
+        - internalAdmin: []
+      summary: Upload a catalog PDF through the internal API
+      tags:
+        - Internal Catalog
+  /api/internal/catalog/documents/{document_id}:
+    put:
+      operationId: InternalCatalog_updateDocument
+      parameters:
+        - name: document_id
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                document_name:
+                  type: string
+                category_name:
+                  type: string
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+      security:
+        - internalAdmin: []
+      summary: Update a catalog PDF through the internal API
+      tags:
+        - Internal Catalog
+    delete:
+      operationId: InternalCatalog_deleteDocument
+      parameters:
+        - name: document_id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - internalAdmin: []
+      summary: Delete a catalog document through the internal API
+      tags:
+        - Internal Catalog
+  /api/internal/catalog/companies/{company_slug}:
+    put:
+      operationId: InternalCatalog_updateCompany
+      parameters:
+        - name: company_slug
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCatalogCompanyDto"
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+      security:
+        - internalAdmin: []
+      summary: Rename a catalog company through the internal API
+      tags:
+        - Internal Catalog
+  /api/internal/messages:
+    get:
+      operationId: InternalMessage_getMessages
+      parameters: []
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+      security:
+        - internalAdmin: []
+      summary: List contact messages through the internal API
+      tags:
+        - Internal Messages
+  /api:
+    get:
+      operationId: App_getApiIndex
+      parameters: []
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: object
+      summary: List available API endpoints
+      tags:
+        - System
+  /api/health:
+    get:
+      operationId: Health_check
+      parameters: []
+      responses:
+        "200":
+          description: ""
+      summary: Check backend health
+      tags:
+        - System
+info:
+  title: Delta Backend API
+  description: Public catalog and product APIs, catalog access flows,
+    authenticated business administration, and internal administration
+    endpoints.
+  version: 0.0.1
+  contact: {}
+tags:
+  - name: System
+    description: API discovery and health endpoints.
+  - name: Products
+    description: Public product discovery endpoints.
+  - name: Customer Cart
+    description: Authenticated customer cart endpoints.
+  - name: Customer Orders
+    description: Authenticated customer checkout and order-history endpoints.
+  - name: Catalog
+    description: Public catalog and access endpoints.
+  - name: Contact Messages
+    description: Public contact form submission.
+  - name: Quotations
+    description: Public cart validation and quotation submission.
+  - name: Business Authentication
+    description: Business dashboard authentication and session endpoints.
+  - name: Business Products
+    description: Authenticated product administration.
+  - name: Business Inventory
+    description: Authenticated stock levels, receipts, counts, adjustments,
+      movements, and order fulfillment.
+  - name: Business Catalog
+    description: Authenticated catalog administration.
+  - name: Business Messages
+    description: Authenticated contact message management.
+  - name: Business Quotations
+    description: Authenticated quotation workflow management.
+  - name: Business Orders
+    description: Authenticated customer-order fulfillment and stock transitions.
+  - name: Internal Catalog
+    description: Service-to-service catalog administration.
+  - name: Internal Messages
+    description: Service-to-service message access.
+servers: []
+components:
+  securitySchemes:
+    businessSession:
+      type: apiKey
+      in: cookie
+      name: business_session
+      description: Business session cookie. Production uses __Host-business_session.
+    catalogAccess:
+      type: apiKey
+      in: cookie
+      name: catalog_access
+      description: Catalog access session cookie scoped to /api.
+    csrfToken:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+      description: CSRF token returned by business authentication.
+    internalAdmin:
+      type: apiKey
+      in: header
+      name: X-Backend-Admin-Token
+      description: Token for the optional internal administration API.
+  schemas:
+    BusinessGoogleAuthDto:
+      type: object
+      properties:
+        id_token:
+          type: string
+          maxLength: 4096
+      required:
+        - id_token
+    DocumentAccessDto:
+      type: object
+      properties:
+        company_slug:
+          type: string
+        category_slug:
+          type: string
+        document_slug:
+          type: string
+        action:
+          enum:
+            - preview
+            - download
+          type: string
+      required:
+        - company_slug
+        - document_slug
+        - action
+    UpdateCatalogCompanyDto:
+      type: object
+      properties:
+        company_name:
+          type: string
+      required:
+        - company_name
+    InventoryReferenceDto:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+      required:
+        - id
+        - name
+    InventoryItemResponseDto:
+      type: object
+      properties:
+        productId:
+          type: string
+        name:
+          type: string
+        sku:
+          type: string
+        modelNumber:
+          type: string
+        company:
+          $ref: "#/components/schemas/InventoryReferenceDto"
+        category:
+          $ref: "#/components/schemas/InventoryReferenceDto"
+        onHandQuantity:
+          type: number
+          minimum: 0
+        reservedQuantity:
+          type: number
+          minimum: 0
+        availableQuantity:
+          type: number
+          minimum: 0
+        incomingQuantity:
+          type: number
+          minimum: 0
+        damagedQuantity:
+          type: number
+          minimum: 0
+        reorderLevel:
+          type: number
+          minimum: 0
+        status:
+          enum:
+            - IN_STOCK
+            - LOW_STOCK
+            - OUT_OF_STOCK
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - productId
+        - name
+        - company
+        - category
+        - onHandQuantity
+        - reservedQuantity
+        - availableQuantity
+        - incomingQuantity
+        - damagedQuantity
+        - reorderLevel
+        - status
+        - updatedAt
+    InventoryListResponseDto:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/InventoryItemResponseDto"
+      required:
+        - data
+    InventoryMovementResponseDto:
+      type: object
+      properties:
+        id:
+          type: string
+        productId:
+          type: string
+        type:
+          type: string
+          enum:
+            - OPENING_BALANCE
+            - PURCHASE_RECEIPT
+            - ORDER_RESERVATION
+            - RESERVATION_RELEASE
+            - ORDER_DISPATCH
+            - CUSTOMER_RETURN
+            - DAMAGE
+            - MANUAL_ADJUSTMENT
+            - STOCK_COUNT
+        quantityDelta:
+          type: number
+        onHandBefore:
+          type: number
+          minimum: 0
+        onHandAfter:
+          type: number
+          minimum: 0
+        reservedBefore:
+          type: number
+          minimum: 0
+        reservedAfter:
+          type: number
+          minimum: 0
+        referenceType:
+          type: string
+        referenceId:
+          type: string
+        reason:
+          type: string
+        notes:
+          type: string
+        createdBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - productId
+        - type
+        - quantityDelta
+        - onHandBefore
+        - onHandAfter
+        - reservedBefore
+        - reservedAfter
+        - reason
+        - createdBy
+        - createdAt
+    InventoryMovementListResponseDto:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/InventoryMovementResponseDto"
+      required:
+        - data
+    ReceiveStockDto:
+      type: object
+      properties:
+        productId:
+          type: string
+        quantity:
+          type: number
+          minimum: 1
+        referenceId:
+          type: string
+          maxLength: 160
+          example: PO-2026-0042
+        notes:
+          type: string
+          maxLength: 1000
+      required:
+        - productId
+        - quantity
+        - referenceId
+    AdjustStockDto:
+      type: object
+      properties:
+        quantityDelta:
+          type: number
+          description: Signed on-hand quantity change.
+          example: -2
+        type:
+          enum:
+            - DAMAGE
+            - MANUAL_ADJUSTMENT
+          type: string
+        reason:
+          type: string
+          maxLength: 500
+        notes:
+          type: string
+          maxLength: 1000
+      required:
+        - quantityDelta
+        - type
+        - reason
+    StockCountDto:
+      type: object
+      properties:
+        countedQuantity:
+          type: number
+          minimum: 0
+        reason:
+          type: string
+          maxLength: 500
+        notes:
+          type: string
+          maxLength: 1000
+      required:
+        - countedQuantity
+        - reason
+    UpdateInventorySettingsDto:
+      type: object
+      properties:
+        reorderLevel:
+          type: number
+          minimum: 0
+      required:
+        - reorderLevel
+    CreateProductCompanyDto:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          maxLength: 160
+        slug:
+          type: string
+        logoPath:
+          type: string
+          maxLength: 1024
+        active:
+          type: boolean
+        sortOrder:
+          type: number
+          minimum: 0
+      required:
+        - id
+        - name
+    UpdateProductCompanyDto:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 160
+        slug:
+          type: string
+        logoPath:
+          type: string
+          maxLength: 1024
+        active:
+          type: boolean
+        sortOrder:
+          type: number
+          minimum: 0
+    CreateProductCategoryDto:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          maxLength: 160
+        slug:
+          type: string
+        companyIds:
+          maxItems: 1000
+          type: array
+          items:
+            type: string
+        active:
+          type: boolean
+        sortOrder:
+          type: number
+          minimum: 0
+      required:
+        - id
+        - name
+        - companyIds
+    UpdateProductCategoryDto:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 160
+        slug:
+          type: string
+        companyIds:
+          maxItems: 1000
+          type: array
+          items:
+            type: string
+        active:
+          type: boolean
+        sortOrder:
+          type: number
+          minimum: 0
+    CreateProductDto:
+      type: object
+      properties:
+        productId:
+          type: string
+        name:
+          type: string
+          maxLength: 240
+        sku:
+          type: string
+          maxLength: 160
+        modelNumber:
+          type: string
+          maxLength: 160
+        isNewCompany:
+          type: boolean
+        companyName:
+          type: string
+          maxLength: 160
+        companyId:
+          type: string
+        isNewCategory:
+          type: boolean
+        categoryName:
+          type: string
+          maxLength: 160
+        categoryId:
+          type: string
+        subcategoryId:
+          type: string
+        subcategoryName:
+          type: string
+          maxLength: 160
+        subcategorySlug:
+          type: string
+        price:
+          type: number
+          minimum: 0
+        currency:
+          type: string
+        discountPercentage:
+          type: number
+          minimum: 0
+          maximum: 100
+        inStock:
+          type: boolean
+        stockQuantity:
+          type: number
+          minimum: 0
+        active:
+          type: boolean
+        shortDescription:
+          type: string
+          maxLength: 500
+        description:
+          type: string
+          maxLength: 20000
+        specifications:
+          type: object
+          additionalProperties: true
+        thumbnailPath:
+          type: string
+          maxLength: 1024
+        mainImagePath:
+          type: string
+          maxLength: 1024
+        additionalImagePaths:
+          maxItems: 20
+          type: array
+          items:
+            type: string
+            maxLength: 1024
+        brochurePath:
+          type: string
+          maxLength: 1024
+      required:
+        - name
+        - price
+        - inStock
+    UpdateProductDto:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 240
+        sku:
+          type: string
+          maxLength: 160
+        modelNumber:
+          type: string
+          maxLength: 160
+        companyId:
+          type: string
+        categoryId:
+          type: string
+        subcategoryId:
+          type: string
+        subcategoryName:
+          type: string
+          maxLength: 160
+        subcategorySlug:
+          type: string
+        price:
+          type: number
+          minimum: 0
+        currency:
+          type: string
+        discountPercentage:
+          type: number
+          minimum: 0
+          maximum: 100
+        active:
+          type: boolean
+        shortDescription:
+          type: string
+          maxLength: 500
+        description:
+          type: string
+          maxLength: 20000
+        specifications:
+          type: object
+          additionalProperties: true
+        thumbnailPath:
+          type: string
+          maxLength: 1024
+        mainImagePath:
+          type: string
+          maxLength: 1024
+        additionalImagePaths:
+          maxItems: 20
+          type: array
+          items:
+            type: string
+            maxLength: 1024
+        brochurePath:
+          type: string
+          maxLength: 1024
+    UpdateQuotationStatusDto:
+      type: object
+      properties:
+        status:
+          enum:
+            - new
+            - reviewing
+            - quoted
+            - closed
+            - cancelled
+          type: string
+      required:
+        - status
+    CatalogLibraryDto:
+      type: object
+      properties:
+        company_slugs:
+          minItems: 1
+          type: array
+          items:
+            type: string
+      required:
+        - company_slugs
+    CatalogAccessDto:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 120
+        mobile:
+          type: string
+          maxLength: 30
+        email:
+          type: string
+          maxLength: 160
+          format: email
+        message:
+          type: string
+          maxLength: 1000
+      required:
+        - name
+        - mobile
+    CatalogGoogleAccessDto:
+      type: object
+      properties:
+        id_token:
+          type: string
+          maxLength: 4096
+      required:
+        - id_token
+    CatalogFirebaseAccessDto:
+      type: object
+      properties:
+        id_token:
+          type: string
+          maxLength: 4096
+      required:
+        - id_token
+    CatalogGoogleRedirectDto:
+      type: object
+      properties:
+        credential:
+          type: string
+          maxLength: 4096
+        g_csrf_token:
+          type: string
+          maxLength: 512
+      required:
+        - credential
+        - g_csrf_token
+    CatalogOtpRequestDto:
+      type: object
+      properties:
+        identifier:
+          type: string
+          maxLength: 160
+        captcha_token:
+          type: string
+          maxLength: 4096
+      required:
+        - identifier
+    CatalogVerifyOtpDto:
+      type: object
+      properties:
+        challenge_id:
+          type: string
+          maxLength: 40
+        code:
+          type: string
+          maxLength: 6
+          pattern: ^\d{6}$
+      required:
+        - challenge_id
+        - code
+    CatalogResendOtpDto:
+      type: object
+      properties:
+        challenge_id:
+          type: string
+          maxLength: 40
+      required:
+        - challenge_id
+    CreateMessageDto:
+      type: object
+      properties:
+        captcha_token:
+          type: string
+          maxLength: 4096
+        name:
+          type: string
+          maxLength: 120
+        mobile:
+          type: string
+          maxLength: 30
+        email:
+          type: string
+          maxLength: 160
+          format: email
+        message:
+          type: string
+          maxLength: 2000
+      required:
+        - name
+        - mobile
+        - email
+        - message
+    Object:
+      type: object
+      properties: {}
+    CartProductReferenceDto:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+      required:
+        - id
+        - name
+        - slug
+    CartProductDto:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        sku:
+          type: string
+        modelNumber:
+          type: string
+        company:
+          $ref: "#/components/schemas/CartProductReferenceDto"
+        category:
+          $ref: "#/components/schemas/CartProductReferenceDto"
+        price:
+          type: number
+          example: 100
+        currency:
+          type: string
+          example: INR
+        discountPercentage:
+          type: number
+          example: 10
+        inStock:
+          type: boolean
+        stockQuantity:
+          type: number
+          minimum: 0
+        thumbnailUrl:
+          type: string
+      required:
+        - id
+        - name
+        - company
+        - category
+        - price
+        - currency
+        - discountPercentage
+        - inStock
+    CustomerCartItemDto:
+      type: object
+      properties:
+        productId:
+          type: string
+        quantity:
+          type: number
+          minimum: 1
+          maximum: 999
+        product:
+          $ref: "#/components/schemas/CartProductDto"
+      required:
+        - productId
+        - quantity
+        - product
+    CustomerCartResponseDto:
+      type: object
+      properties:
+        customer_id:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CustomerCartItemDto"
+      required:
+        - customer_id
+        - items
+    SetCartItemDto:
+      type: object
+      properties:
+        quantity:
+          type: number
+          minimum: 1
+          maximum: 999
+          example: 2
+      required:
+        - quantity
+    MergeCartItemDto:
+      type: object
+      properties:
+        quantity:
+          type: number
+          minimum: 1
+          maximum: 999
+          example: 2
+        productId:
+          type: string
+          example: compact-nsx-100
+      required:
+        - quantity
+        - productId
+    MergeCartDto:
+      type: object
+      properties:
+        strategy:
+          type: string
+          enum:
+            - maximum_quantity
+          example: maximum_quantity
+        items:
+          minItems: 1
+          maxItems: 50
+          type: array
+          items:
+            $ref: "#/components/schemas/MergeCartItemDto"
+      required:
+        - strategy
+        - items
+    CustomerOrderLineItemDto:
+      type: object
+      properties:
+        product_id:
+          type: string
+        name:
+          type: string
+        sku:
+          type: string
+        model_number:
+          type: string
+        quantity:
+          type: number
+          minimum: 1
+        unit_price:
+          type: number
+          minimum: 0
+        line_total:
+          type: number
+          minimum: 0
+        currency:
+          type: string
+          example: INR
+      required:
+        - product_id
+        - name
+        - quantity
+        - unit_price
+        - line_total
+        - currency
+    CustomerOrderDto:
+      type: object
+      properties:
+        order_id:
+          type: string
+          format: uuid
+        reference:
+          type: string
+          example: DE-01K5ABCDEF1234567890
+        status:
+          type: string
+          example: placed
+        payment_status:
+          type: string
+          example: pending
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CustomerOrderLineItemDto"
+        item_count:
+          type: number
+          minimum: 0
+          description: Sum of all ordered quantities.
+        totals:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              subtotal:
+                type: number
+                minimum: 0
+              shipping:
+                type: number
+                minimum: 0
+              total:
+                type: number
+                minimum: 0
+            required:
+              - subtotal
+              - shipping
+              - total
+          description: Order totals keyed by ISO 4217 currency code.
+          example:
+            INR:
+              subtotal: 1200
+              shipping: 300
+              total: 1500
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - order_id
+        - reference
+        - status
+        - payment_status
+        - items
+        - item_count
+        - totals
+        - created_at
+        - updated_at
+    CustomerOrdersResponseDto:
+      type: object
+      properties:
+        orders:
+          type: array
+          items:
+            $ref: "#/components/schemas/CustomerOrderDto"
+      required:
+        - orders
+    OrderAddressDto:
+      type: object
+      properties:
+        firstName:
+          type: string
+          maxLength: 100
+          example: Ankita
+        lastName:
+          type: string
+          maxLength: 100
+          example: Patel
+        company:
+          type: string
+          maxLength: 200
+        gstNumber:
+          type: string
+          pattern: ^[0-9A-Z]{15}$
+          example: 27ABCDE1234F1Z5
+        addressLine1:
+          type: string
+          maxLength: 250
+        addressLine2:
+          type: string
+          maxLength: 250
+        city:
+          type: string
+          maxLength: 100
+        state:
+          type: string
+          maxLength: 100
+        postcode:
+          type: string
+          pattern: ^\d{6}$
+          example: "411001"
+        phone:
+          type: string
+          pattern: ^\d{10}$
+          example: "9876543210"
+      required:
+        - firstName
+        - lastName
+        - addressLine1
+        - city
+        - state
+        - postcode
+        - phone
+    CreateOrderDto:
+      type: object
+      properties:
+        orderRequestId:
+          type: string
+          format: uuid
+        email:
+          type: string
+          maxLength: 254
+          format: email
+          example: customer@example.com
+        billingAddress:
+          $ref: "#/components/schemas/OrderAddressDto"
+        shippingAddress:
+          $ref: "#/components/schemas/OrderAddressDto"
+        notes:
+          type: string
+          maxLength: 2000
+        termsAccepted:
+          type: boolean
+          example: true
+      required:
+        - orderRequestId
+        - email
+        - billingAddress
+        - termsAccepted
+    CreateOrderResponseDto:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          example: true
+        order_id:
+          type: string
+        reference:
+          type: string
+          example: DE-01K5ABCDEF1234567890
+        status:
+          type: string
+          example: placed
+        payment_status:
+          type: string
+          example: pending
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - ok
+        - order_id
+        - reference
+        - status
+        - payment_status
+        - created_at
+    QuotationCartItemDto:
+      type: object
+      properties:
+        productId:
+          type: string
+        quantity:
+          type: number
+          minimum: 1
+          maximum: 999
+      required:
+        - productId
+        - quantity
+    ValidateCartDto:
+      type: object
+      properties:
+        items:
+          minItems: 1
+          maxItems: 50
+          type: array
+          items:
+            $ref: "#/components/schemas/QuotationCartItemDto"
+      required:
+        - items
+    QuotationCustomerDto:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 120
+        company:
+          type: string
+          maxLength: 160
+        email:
+          type: string
+          maxLength: 160
+          format: email
+        mobile:
+          type: string
+          pattern: ^\d{10}$
+        deliveryLocation:
+          type: string
+          maxLength: 500
+      required:
+        - name
+        - email
+        - mobile
+        - deliveryLocation
+    CreateQuotationRequestDto:
+      type: object
+      properties:
+        items:
+          minItems: 1
+          maxItems: 50
+          type: array
+          items:
+            $ref: "#/components/schemas/QuotationCartItemDto"
+        captcha_token:
+          type: string
+          maxLength: 4096
+        customer:
+          $ref: "#/components/schemas/QuotationCustomerDto"
+        notes:
+          type: string
+          maxLength: 2000
+      required:
+        - items
+        - customer

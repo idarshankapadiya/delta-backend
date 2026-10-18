@@ -1,4 +1,8 @@
-import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { Firestore, Timestamp } from '@google-cloud/firestore';
 import {
   ContactMessage,
@@ -55,6 +59,18 @@ export class MessageService {
         this.toContactMessage(doc.id, doc.data() as StoredContactMessage),
       ),
     };
+  }
+
+  async deleteMessage(messageId: string): Promise<{ ok: true }> {
+    const docRef = this.getCollection().doc(messageId);
+    const snapshot = await docRef.get();
+
+    if (!snapshot.exists) {
+      throw new NotFoundException('Contact message not found');
+    }
+
+    await docRef.delete();
+    return { ok: true };
   }
 
   private getCollection() {

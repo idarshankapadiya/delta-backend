@@ -8,6 +8,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { NoStoreInterceptor } from '../security/no-store.interceptor';
 import { PublicSiteOriginGuard } from '../security/origin.guards';
 import { getClientIp } from '../security/request-context';
@@ -18,6 +19,7 @@ import { RecaptchaEnterpriseService } from './recaptcha-enterprise.service';
 
 @Controller('message')
 @UseInterceptors(NoStoreInterceptor)
+@ApiTags('Contact Messages')
 export class MessageController {
   constructor(
     private readonly messageService: MessageService,
@@ -26,6 +28,7 @@ export class MessageController {
   ) {}
 
   @Post()
+  @ApiOperation({ summary: 'Submit a public contact message' })
   @UseGuards(PublicSiteOriginGuard)
   async createMessage(
     @Body() body: CreateMessageDto,

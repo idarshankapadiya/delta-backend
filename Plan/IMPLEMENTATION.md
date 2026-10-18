@@ -343,7 +343,7 @@ POST /api/catalog/access/google
 - Verifies the Google ID token audience against `GOOGLE_CLIENT_ID`.
 - Requires a verified Google email.
 - Creates an opaque backend session token.
-- Sets `catalog_access` with `HttpOnly`, `SameSite=Lax`, `Path=/api/catalog`, `Expires`, and `Secure` in production.
+- Sets `catalog_access` with `HttpOnly`, `SameSite=Lax`, `Path=/api`, `Expires`, and `Secure` in production so catalog and customer-cart endpoints share the authenticated session.
 - Returns `auth_provider`, `email`, `name`, and `expires_at`.
 
 Current session lookup:

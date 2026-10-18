@@ -9,13 +9,34 @@ import { BusinessCatalogController } from './business-catalog.controller';
 import { BusinessMessageController } from './business-message.controller';
 import { CatalogModule } from '../catalog/catalog.module';
 import { MessageModule } from '../message/message.module';
+import { ProductModule } from '../product/product.module';
+import { BusinessProductController } from './business-product.controller';
+import { QuotationModule } from '../quotation/quotation.module';
+import { BusinessQuotationController } from './business-quotation.controller';
+import { BusinessUserController } from './business-user.controller';
+import { OrderModule } from '../order/order.module';
+import { BusinessOrderController } from './business-order.controller';
+import { InventoryModule } from '../inventory/inventory.module';
+import { BusinessInventoryController } from './business-inventory.controller';
 
 @Module({
-  imports: [CatalogModule, MessageModule],
+  imports: [
+    CatalogModule,
+    MessageModule,
+    ProductModule,
+    QuotationModule,
+    OrderModule,
+    InventoryModule,
+  ],
   controllers: [
     BusinessAuthController,
     BusinessCatalogController,
     BusinessMessageController,
+    BusinessOrderController,
+    BusinessInventoryController,
+    BusinessProductController,
+    BusinessQuotationController,
+    BusinessUserController,
   ],
   providers: [
     BusinessAuthGuard,

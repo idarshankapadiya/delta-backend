@@ -11,6 +11,10 @@ import { RecaptchaEnterpriseService } from './recaptcha-enterprise.service';
     RecaptchaEnterpriseService,
     MessageRateLimiterService,
   ],
-  exports: [MessageService],
+  exports: [
+    MessageService,
+    MessageRateLimiterService,
+    RecaptchaEnterpriseService,
+  ],
 })
 export class MessageModule {}

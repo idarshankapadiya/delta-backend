@@ -26,6 +26,26 @@ describe('AppController', () => {
             path: '/api/health',
           }),
           expect.objectContaining({
+            method: 'GET',
+            path: '/api/products',
+          }),
+          expect.objectContaining({
+            method: 'GET',
+            path: '/api/products/:productId',
+          }),
+          expect.objectContaining({
+            method: 'GET/DELETE',
+            path: '/api/cart',
+          }),
+          expect.objectContaining({
+            method: 'PUT/DELETE',
+            path: '/api/cart/items/:productId',
+          }),
+          expect.objectContaining({
+            method: 'POST',
+            path: '/api/cart/merge',
+          }),
+          expect.objectContaining({
             method: 'POST',
             path: '/api/message',
           }),
@@ -34,12 +54,44 @@ describe('AppController', () => {
             path: '/api/business/messages',
           }),
           expect.objectContaining({
+            method: 'DELETE',
+            path: '/api/business/messages/:message_id',
+          }),
+          expect.objectContaining({
             method: 'GET',
             path: '/api/business/catalog/all',
           }),
           expect.objectContaining({
             method: 'POST/PUT/DELETE',
             path: '/api/business/catalog/**',
+          }),
+          expect.objectContaining({
+            method: 'POST',
+            path: '/api/business/products',
+          }),
+          expect.objectContaining({
+            method: 'PUT/DELETE',
+            path: '/api/business/products/:productId',
+          }),
+          expect.objectContaining({
+            method: 'DELETE',
+            path: '/api/business/products/out-of-stock/:productId',
+          }),
+          expect.objectContaining({
+            method: 'POST',
+            path: '/api/business/companies',
+          }),
+          expect.objectContaining({
+            method: 'PUT/DELETE',
+            path: '/api/business/companies/:companyId',
+          }),
+          expect.objectContaining({
+            method: 'POST',
+            path: '/api/business/categories',
+          }),
+          expect.objectContaining({
+            method: 'PUT/DELETE',
+            path: '/api/business/categories/:categoryId',
           }),
           expect.objectContaining({
             method: 'POST',

@@ -11,15 +11,25 @@ interface StoredMessage {
 
 describe('MessageService', () => {
   let service: MessageService;
+  let documentRef: {
+    delete: jest.Mock<Promise<void>, []>;
+    get: jest.Mock;
+  };
   let collection: {
     add: jest.Mock<Promise<{ id: string }>, [StoredMessage]>;
+    doc: jest.Mock;
     orderBy: jest.Mock;
     get: jest.Mock;
   };
 
   beforeEach(() => {
+    documentRef = {
+      delete: jest.fn<Promise<void>, []>().mockResolvedValue(undefined),
+      get: jest.fn(),
+    };
     collection = {
       add: jest.fn<Promise<{ id: string }>, [StoredMessage]>(),
+      doc: jest.fn(() => documentRef),
       orderBy: jest.fn(),
       get: jest.fn(),
     };
@@ -121,5 +131,25 @@ describe('MessageService', () => {
       ],
     });
     expect(collection.orderBy).toHaveBeenCalledWith('created_at', 'desc');
+  });
+
+  it('deletes an existing message by id', async () => {
+    documentRef.get.mockResolvedValue({ exists: true });
+
+    await expect(service.deleteMessage('message-1')).resolves.toEqual({
+      ok: true,
+    });
+
+    expect(collection.doc).toHaveBeenCalledWith('message-1');
+    expect(documentRef.delete).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects deleting a missing message', async () => {
+    documentRef.get.mockResolvedValue({ exists: false });
+
+    await expect(service.deleteMessage('missing-message')).rejects.toThrow(
+      'Contact message not found',
+    );
+    expect(documentRef.delete).not.toHaveBeenCalled();
   });
 });

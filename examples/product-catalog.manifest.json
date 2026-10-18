@@ -1,0 +1,47 @@
+{
+  "companies": [
+    {
+      "id": "schneider",
+      "name": "Schneider Electric",
+      "slug": "schneider",
+      "active": true,
+      "sortOrder": 10
+    }
+  ],
+  "categories": [
+    {
+      "id": "contactors",
+      "name": "Contactors",
+      "slug": "contactors",
+      "companyIds": ["schneider"],
+      "active": true,
+      "sortOrder": 10
+    }
+  ],
+  "products": [
+    {
+      "productId": "schneider-lc1d09",
+      "name": "TeSys D Contactor LC1D09",
+      "sku": "LC1D09",
+      "modelNumber": "LC1D09",
+      "companyId": "schneider",
+      "categoryId": "contactors",
+      "price": 2500,
+      "currency": "INR",
+      "discountPercentage": 0,
+      "inStock": true,
+      "active": true,
+      "description": "Example product. Replace this with catalog content.",
+      "specifications": {
+        "Rated operational current": "9 A",
+        "Coil voltage": "230 V AC"
+      },
+      "assets": {
+        "thumbnail": "schneider-lc1d09/thumbnail.png",
+        "mainImage": "schneider-lc1d09/main.svg",
+        "additionalImages": ["schneider-lc1d09/image-2.webp"],
+        "brochure": "schneider-lc1d09/brochure.pdf"
+      }
+    }
+  ]
+}

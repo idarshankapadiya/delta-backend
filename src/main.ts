@@ -11,6 +11,7 @@ import { AppModule } from './app.module';
 import { getHttpHost, getHttpPort } from './config/http.config';
 import { getCatalogUploadMaxBytes } from './config/catalog.config';
 import { corsAllowedMethods, handleCorsOrigin } from './config/cors.config';
+import { setupSwagger } from './openapi';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -34,6 +35,13 @@ async function bootstrap() {
     origin: handleCorsOrigin,
     credentials: true,
     methods: corsAllowedMethods,
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-CSRF-Token',
+      'X-Backend-Admin-Token',
+      'X-Expected-Customer-Id',
+    ],
   });
 
   app.useGlobalPipes(
@@ -45,6 +53,7 @@ async function bootstrap() {
   );
 
   app.setGlobalPrefix('api');
+  setupSwagger(app);
   const port = getHttpPort();
   const host = getHttpHost();
   await app.listen(port, host);

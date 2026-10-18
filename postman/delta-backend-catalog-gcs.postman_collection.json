@@ -1,7 +1,7 @@
 {
   "info": {
-    "name": "Delta Backend Catalog GCS Flow",
-    "description": "Postman collection for the name-derived slug catalog API. Admin create/update requests send company_name, optional category_name, and document_name; writable slug fields and display_name are unsupported. PDFs stay private behind signed URLs, while thumbnails use public company/optional-category paths in darshanent-thumbnail-dir. document_id remains stable across document updates. POST /api/catalog/access is inquiry-only; Google access and challenge-specific OTP verification grant the catalog_access cookie. Do not put GOOGLE_APPLICATION_CREDENTIALS or service account JSON content in Postman.",
+    "name": "Delta Backend Catalog And Product GCS Flow",
+    "description": "Postman collection for the name-derived slug catalog API. Admin create/update requests send company_name, optional category_name, and document_name; writable slug fields and display_name are unsupported. PDFs stay private behind signed URLs, while thumbnails use public company/optional-category paths in darshanent-thumbnail-dir. document_id remains stable across document updates. POST /api/catalog/access is inquiry-only; Google access and challenge-specific OTP verification grant the catalog_access cookie. Do not put GOOGLE_APPLICATION_CREDENTIALS or service account JSON content in Postman. Product API folders cover Firestore companies/categories, bounded product queries, filtering, search, sorting, cursor pagination, product details, signed GCS assets, and validation errors.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -100,6 +100,82 @@
     {
       "key": "access_expires_at",
       "value": ""
+    },
+    {
+      "key": "product_company_id",
+      "value": "schneider"
+    },
+    {
+      "key": "product_category_id",
+      "value": "contactors"
+    },
+    {
+      "key": "product_subcategory_id",
+      "value": ""
+    },
+    {
+      "key": "product_id",
+      "value": "schneider-lc1d09"
+    },
+    {
+      "key": "missing_product_id",
+      "value": "postman-product-does-not-exist"
+    },
+    {
+      "key": "product_search_term",
+      "value": "LC1D09"
+    },
+    {
+      "key": "product_page_limit",
+      "value": "30"
+    },
+    {
+      "key": "product_next_cursor",
+      "value": ""
+    },
+    {
+      "key": "product_thumbnail_url",
+      "value": ""
+    },
+    {
+      "key": "product_main_image_url",
+      "value": ""
+    },
+    {
+      "key": "product_additional_image_url",
+      "value": ""
+    },
+    {
+      "key": "product_brochure_url",
+      "value": ""
+    },
+    {
+      "key": "business_google_id_token",
+      "value": "replace-with-allowlisted-business-google-id-token"
+    },
+    {
+      "key": "business_csrf_token",
+      "value": ""
+    },
+    {
+      "key": "admin_product_company_id",
+      "value": "postman-product-company"
+    },
+    {
+      "key": "admin_product_category_id",
+      "value": "postman-product-category"
+    },
+    {
+      "key": "admin_new_product_id",
+      "value": "postman-new-product"
+    },
+    {
+      "key": "admin_out_of_stock_product_id",
+      "value": "postman-out-of-stock-product"
+    },
+    {
+      "key": "admin_product_id",
+      "value": "postman-product-delete"
     }
   ],
   "item": [
@@ -152,6 +228,7 @@
                   "  });",
                   "",
                   "  pm.expect(endpointKeys).to.include('GET /api/health');",
+                  "  pm.expect(endpointKeys).to.include('GET /api/docs');",
                   "  pm.expect(endpointKeys).to.include('POST /api/message');",
                   "  pm.expect(endpointKeys).to.include('GET /api/business/messages');",
                   "  pm.expect(endpointKeys).to.include('GET /api/business/catalog/all');",
@@ -168,6 +245,73 @@
           "request": {
             "method": "GET",
             "url": "{{base_url}}/api"
+          }
+        },
+        {
+          "name": "Swagger UI",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Swagger UI returns HTML', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.headers.get('Content-Type')).to.include('text/html');",
+                  "  pm.expect(pm.response.text()).to.include('Swagger UI');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/docs"
+          }
+        },
+        {
+          "name": "OpenAPI JSON",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('OpenAPI JSON returns the API definition', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.openapi).to.eql('3.0.0');",
+                  "  pm.expect(Object.keys(json.paths)).to.not.be.empty;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/docs/openapi.json"
+          }
+        },
+        {
+          "name": "OpenAPI YAML",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('OpenAPI YAML returns the API definition', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.headers.get('Content-Type')).to.include('text/yaml');",
+                  "  pm.expect(pm.response.text()).to.include('openapi: 3.0.0');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/docs/openapi.yaml"
           }
         }
       ]
@@ -1238,12 +1382,6 @@
             "method": "POST",
             "header": [
               {
-                "key": "Authorization",
-                "value": "Bearer {{operator_identity_token}}"
-              }
-            ],
-            "header": [
-              {
                 "key": "Content-Type",
                 "value": "application/json"
               }
@@ -1393,6 +1531,2656 @@
             },
             "url": "{{admin_base_url}}/api/internal/catalog/documents"
           }
+        }
+      ]
+    },
+    {
+      "name": "Product Firestore GCS APIs",
+      "description": "Public product catalog requests backed by Firestore and GCS. Run Product Listings / Get Products first to populate product IDs, cursors, and product asset variables.",
+      "item": [
+        {
+          "name": "Product Smoke Checks",
+          "item": [
+            {
+              "name": "Root Lists Product Endpoints",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('root returns 200', function () {",
+                      "  pm.response.to.have.status(200);",
+                      "});",
+                      "",
+                      "const json = pm.response.json();",
+                      "const endpointKeys = json.endpoints.map(function (endpoint) { return endpoint.method + ' ' + endpoint.path; });",
+                      "pm.test('root lists every product endpoint', function () {",
+                      "  pm.expect(endpointKeys).to.include('GET /api/companies');",
+                      "  pm.expect(endpointKeys).to.include('GET /api/categories');",
+                      "  pm.expect(endpointKeys).to.include('GET /api/products');",
+                      "  pm.expect(endpointKeys).to.include('GET /api/products/:productId');",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "url": "{{base_url}}/api"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Product Companies And Categories",
+          "item": [
+            {
+              "name": "Get Product Companies",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('companies returns 200', function () {",
+                      "  pm.response.to.have.status(200);",
+                      "});",
+                      "",
+                      "const json = pm.response.json();",
+                      "pm.test('companies use collection contract', function () {",
+                      "  pm.expect(json.data).to.be.an('array');",
+                      "  json.data.forEach(function (company) {",
+                      "    pm.expect(company.id).to.be.a('string').and.not.empty;",
+                      "    pm.expect(company.name).to.be.a('string').and.not.empty;",
+                      "    pm.expect(company.slug).to.be.a('string').and.not.empty;",
+                      "  });",
+                      "});",
+                      "if (json.data[0]) pm.collectionVariables.set('product_company_id', json.data[0].id);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "url": "{{base_url}}/api/companies"
+              }
+            },
+            {
+              "name": "Get All Product Categories",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('categories returns 200', function () {",
+                      "  pm.response.to.have.status(200);",
+                      "});",
+                      "",
+                      "const json = pm.response.json();",
+                      "pm.test('categories use collection contract', function () {",
+                      "  pm.expect(json.data).to.be.an('array');",
+                      "  json.data.forEach(function (category) {",
+                      "    pm.expect(category.id).to.be.a('string').and.not.empty;",
+                      "    pm.expect(category.name).to.be.a('string').and.not.empty;",
+                      "    pm.expect(category.slug).to.be.a('string').and.not.empty;",
+                      "  });",
+                      "});",
+                      "if (json.data[0]) pm.collectionVariables.set('product_category_id', json.data[0].id);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "url": "{{base_url}}/api/categories"
+              }
+            },
+            {
+              "name": "Get Product Categories By Company",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('company categories returns 200', function () {",
+                      "  pm.response.to.have.status(200);",
+                      "});",
+                      "",
+                      "const json = pm.response.json();",
+                      "pm.test('company categories contains data array', function () { pm.expect(json.data).to.be.an('array'); });",
+                      "if (json.data[0]) pm.collectionVariables.set('product_category_id', json.data[0].id);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "url": "{{base_url}}/api/categories?companyId={{product_company_id}}"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Product Listings",
+          "item": [
+            {
+              "name": "Get Products",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('product listing returns 200', function () {",
+                      "  pm.response.to.have.status(200);",
+                      "});",
+                      "",
+                      "const json = pm.response.json();",
+                      "pm.test('response has lightweight data and cursor pagination', function () {",
+                      "  pm.expect(json.data).to.be.an('array');",
+                      "  pm.expect(json.pagination).to.be.an('object');",
+                      "  pm.expect(json.pagination.hasMore).to.be.a('boolean');",
+                      "  pm.expect(json.pagination.nextCursor === null || typeof json.pagination.nextCursor === 'string').to.eql(true);",
+                      "  json.data.forEach(function (product) {",
+                      "    pm.expect(product.id).to.be.a('string').and.not.empty;",
+                      "    pm.expect(product.name).to.be.a('string').and.not.empty;",
+                      "    pm.expect(product.company).to.be.an('object');",
+                      "    pm.expect(product.category).to.be.an('object');",
+                      "    pm.expect(product.price).to.be.a('number');",
+                      "    pm.expect(product.currency).to.be.a('string');",
+                      "    pm.expect(product.inStock).to.be.a('boolean');",
+                      "    pm.expect(product).to.not.have.property('description');",
+                      "    pm.expect(product).to.not.have.property('specifications');",
+                      "    pm.expect(product).to.not.have.property('mainImageUrl');",
+                      "  });",
+                      "});",
+                      "",
+                      "pm.collectionVariables.set('product_next_cursor', json.pagination.nextCursor || '');",
+                      "if (json.data[0]) {",
+                      "  pm.collectionVariables.set('product_id', json.data[0].id);",
+                      "  pm.collectionVariables.set('product_company_id', json.data[0].company.id);",
+                      "  pm.collectionVariables.set('product_category_id', json.data[0].category.id);",
+                      "  pm.collectionVariables.set('product_thumbnail_url', json.data[0].thumbnailUrl || '');",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "url": "{{base_url}}/api/products?limit={{product_page_limit}}&sort=name_asc",
+                "description": "Run this first to populate product IDs, cursor, and product asset variables."
+              }
+            },
+            {
+              "name": "Get Products By Company",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('company filter returns 200', function () {",
+                      "  pm.response.to.have.status(200);",
+                      "});",
+                      "const json = pm.response.json();",
+                      "pm.test('all products match company', function () { json.data.forEach(function (product) { pm.expect(product.company.id).to.eql(pm.collectionVariables.get('product_company_id')); }); });"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "url": "{{base_url}}/api/products?companyId={{product_company_id}}&limit={{product_page_limit}}"
+              }
+            },
+            {
+              "name": "Get Products By Category",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('category filter returns 200', function () {",
+                      "  pm.response.to.have.status(200);",
+                      "});",
+                      "const json = pm.response.json();",
+                      "pm.test('all products match category', function () { json.data.forEach(function (product) { pm.expect(product.category.id).to.eql(pm.collectionVariables.get('product_category_id')); }); });"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "url": "{{base_url}}/api/products?categoryId={{product_category_id}}&limit={{product_page_limit}}"
+              }
+            },
+            {
+              "name": "Get Products By Company Category And Stock",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('combined filters returns 200', function () {",
+                      "  pm.response.to.have.status(200);",
+                      "});",
+                      "const json = pm.response.json();",
+                      "pm.test('all products match combined filters', function () {",
+                      "  json.data.forEach(function (product) {",
+                      "    pm.expect(product.company.id).to.eql(pm.collectionVariables.get('product_company_id'));",
+                      "    pm.expect(product.category.id).to.eql(pm.collectionVariables.get('product_category_id'));",
+                      "    pm.expect(product.inStock).to.eql(true);",
+                      "  });",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "url": "{{base_url}}/api/products?companyId={{product_company_id}}&categoryId={{product_category_id}}&stock=in_stock&limit={{product_page_limit}}"
+              }
+            },
+            {
+              "name": "Get Out Of Stock Products",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('out-of-stock filter returns 200', function () {",
+                      "  pm.response.to.have.status(200);",
+                      "});",
+                      "const json = pm.response.json();",
+                      "pm.test('all products are out of stock', function () { json.data.forEach(function (product) { pm.expect(product.inStock).to.eql(false); }); });"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "url": "{{base_url}}/api/products?stock=out_of_stock&limit={{product_page_limit}}"
+              }
+            },
+            {
+              "name": "Search Products",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('search returns 200', function () {",
+                      "  pm.response.to.have.status(200);",
+                      "});",
+                      "const json = pm.response.json();",
+                      "pm.test('search uses listing contract', function () { pm.expect(json.data).to.be.an('array'); pm.expect(json.pagination).to.be.an('object'); });"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "url": "{{base_url}}/api/products?search={{product_search_term}}&limit={{product_page_limit}}"
+              }
+            },
+            {
+              "name": "Sort Products By Name Descending",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('name descending sort returns 200', function () {",
+                      "  pm.response.to.have.status(200);",
+                      "});",
+                      "const values = pm.response.json().data.map(function (product) { return product.name.toLowerCase(); });",
+                      "pm.test('names are descending', function () { for (let i = 1; i < values.length; i += 1) pm.expect(values[i - 1].localeCompare(values[i])).to.be.at.least(0); });"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "url": "{{base_url}}/api/products?sort=name_desc&limit={{product_page_limit}}"
+              }
+            },
+            {
+              "name": "Sort Products By Price Ascending",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('price ascending sort returns 200', function () {",
+                      "  pm.response.to.have.status(200);",
+                      "});",
+                      "const values = pm.response.json().data.map(function (product) { return product.price; });",
+                      "pm.test('prices are ascending', function () { for (let i = 1; i < values.length; i += 1) pm.expect(values[i - 1]).to.be.at.most(values[i]); });"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "url": "{{base_url}}/api/products?sort=price_asc&limit={{product_page_limit}}"
+              }
+            },
+            {
+              "name": "Sort Products By Price Descending",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('price descending sort returns 200', function () {",
+                      "  pm.response.to.have.status(200);",
+                      "});",
+                      "const values = pm.response.json().data.map(function (product) { return product.price; });",
+                      "pm.test('prices are descending', function () { for (let i = 1; i < values.length; i += 1) pm.expect(values[i - 1]).to.be.at.least(values[i]); });"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "url": "{{base_url}}/api/products?sort=price_desc&limit={{product_page_limit}}"
+              }
+            },
+            {
+              "name": "Get Next Product Cursor Page",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (!pm.collectionVariables.get('product_next_cursor')) pm.execution.skipRequest();"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('next cursor page returns 200', function () {",
+                      "  pm.response.to.have.status(200);",
+                      "});",
+                      "const json = pm.response.json();",
+                      "pm.test('next page uses listing contract', function () { pm.expect(json.data).to.be.an('array'); pm.expect(json.pagination.hasMore).to.be.a('boolean'); });"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "url": "{{base_url}}/api/products?limit={{product_page_limit}}&sort=name_asc&cursor={{product_next_cursor}}",
+                "description": "Run Get Products first. Skipped when there is no next page."
+              }
+            }
+          ]
+        },
+        {
+          "name": "Product Detail And Assets",
+          "item": [
+            {
+              "name": "Get Product Detail",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('detail returns seeded product or 404', function () { pm.expect([200, 404]).to.include(pm.response.code); });",
+                      "if (pm.response.code === 200) {",
+                      "  const json = pm.response.json();",
+                      "  pm.test('detail has full contract', function () {",
+                      "    pm.expect(json.id).to.eql(pm.collectionVariables.get('product_id'));",
+                      "    pm.expect(json.description).to.be.a('string');",
+                      "    pm.expect(json.specifications).to.be.an('object');",
+                      "    pm.expect(json.additionalImageUrls).to.be.an('array');",
+                      "  });",
+                      "  pm.collectionVariables.set('product_thumbnail_url', json.thumbnailUrl || '');",
+                      "  pm.collectionVariables.set('product_main_image_url', json.mainImageUrl || '');",
+                      "  pm.collectionVariables.set('product_additional_image_url', json.additionalImageUrls[0] || '');",
+                      "  pm.collectionVariables.set('product_brochure_url', json.brochureUrl || '');",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "url": "{{base_url}}/api/products/{{product_id}}",
+                "description": "Get Products overwrites product_id with the first seeded product."
+              }
+            },
+            {
+              "name": "Open Product Thumbnail URL",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (!pm.collectionVariables.get('product_thumbnail_url')) pm.execution.skipRequest();"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('thumbnail asset returns 200', function () {",
+                      "  pm.response.to.have.status(200);",
+                      "});",
+                      "pm.test('thumbnail is an image', function () { pm.expect(pm.response.headers.get('Content-Type') || '').to.match(/^image\\//i); });"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "url": "{{product_thumbnail_url}}"
+              }
+            },
+            {
+              "name": "Open Product Main Image URL",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (!pm.collectionVariables.get('product_main_image_url')) pm.execution.skipRequest();"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('main image asset returns 200', function () {",
+                      "  pm.response.to.have.status(200);",
+                      "});",
+                      "pm.test('main asset is an image', function () { pm.expect(pm.response.headers.get('Content-Type') || '').to.match(/^image\\//i); });"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "url": "{{product_main_image_url}}"
+              }
+            },
+            {
+              "name": "Open Product Additional Image URL",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (!pm.collectionVariables.get('product_additional_image_url')) pm.execution.skipRequest();"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('additional image asset returns 200', function () {",
+                      "  pm.response.to.have.status(200);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "url": "{{product_additional_image_url}}"
+              }
+            },
+            {
+              "name": "Open Product Brochure URL",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (!pm.collectionVariables.get('product_brochure_url')) pm.execution.skipRequest();"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('brochure asset returns 200', function () {",
+                      "  pm.response.to.have.status(200);",
+                      "});",
+                      "pm.test('brochure is a PDF', function () { pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/pdf'); });"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "url": "{{product_brochure_url}}"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Product Validation And Errors",
+          "item": [
+            {
+              "name": "Reject Product Limit Above 100",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('limit above maximum returns 400', function () { pm.response.to.have.status(400); });"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "url": "{{base_url}}/api/products?limit=101"
+              }
+            },
+            {
+              "name": "Reject Invalid Product Stock Filter",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('invalid stock returns 400', function () { pm.response.to.have.status(400); });"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "url": "{{base_url}}/api/products?stock=available"
+              }
+            },
+            {
+              "name": "Reject Invalid Product Sort",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('invalid sort returns 400', function () { pm.response.to.have.status(400); });"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "url": "{{base_url}}/api/products?sort=newest"
+              }
+            },
+            {
+              "name": "Reject Invalid Product Cursor",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('invalid cursor returns 400', function () { pm.response.to.have.status(400); });"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "url": "{{base_url}}/api/products?cursor=not-a-valid-cursor"
+              }
+            },
+            {
+              "name": "Get Missing Product",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('missing product returns 404', function () { pm.response.to.have.status(404); });"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "url": "{{base_url}}/api/products/{{missing_product_id}}"
+              }
+            },
+            {
+              "name": "Reject Invalid Product Company ID",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('invalid company ID returns 400', function () { pm.response.to.have.status(400); });"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "url": "{{base_url}}/api/products?companyId=invalid%20company"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Product Admin CRUD",
+          "description": "Authenticated business CRUD flow for Firestore products, companies, and categories. Run in order. The Google account must be allowlisted by the backend; Postman retains the business session cookie and stores the returned CSRF token.",
+          "item": [
+            {
+              "name": "Business Google Sign In",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('business sign in succeeds', function () {",
+                      "  pm.response.to.have.status(201);",
+                      "});",
+                      "const json = pm.response.json();",
+                      "pm.collectionVariables.set('business_csrf_token', json.csrf_token);",
+                      "pm.test('session and CSRF token are returned', function () {",
+                      "  pm.expect(json.authorized).to.eql(true);",
+                      "  pm.expect(json.csrf_token).to.be.a('string').and.not.empty;",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/auth/google",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"id_token\": \"{{business_google_id_token}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Add Product Company",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('company is created', function () {",
+                      "  pm.response.to.have.status(201);",
+                      "});",
+                      "const json = pm.response.json();",
+                      "pm.test('response confirms success', function () {",
+                      "  pm.expect(json.ok).to.eql(true);",
+                      "});",
+                      "pm.test('created company id matches', function () {",
+                      "  pm.expect(json.company.id).to.eql(pm.collectionVariables.get('admin_product_company_id'));",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/companies",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"id\": \"{{admin_product_company_id}}\",\n  \"name\": \"Postman Product Company\",\n  \"slug\": \"{{admin_product_company_id}}\",\n  \"active\": true,\n  \"sortOrder\": 900\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Add Product Category",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('category is created', function () {",
+                      "  pm.response.to.have.status(201);",
+                      "});",
+                      "const json = pm.response.json();",
+                      "pm.test('response confirms success', function () {",
+                      "  pm.expect(json.ok).to.eql(true);",
+                      "});",
+                      "pm.test('created category id matches', function () {",
+                      "  pm.expect(json.category.id).to.eql(pm.collectionVariables.get('admin_product_category_id'));",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/categories",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"id\": \"{{admin_product_category_id}}\",\n  \"name\": \"Postman Product Category\",\n  \"slug\": \"{{admin_product_category_id}}\",\n  \"companyIds\": [\n    \"{{admin_product_company_id}}\"\n  ],\n  \"active\": true,\n  \"sortOrder\": 900\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Add New Product",
+              "description": "Creates a new product that appears in the public product API when active. productId is generated from name by converting it to lowercase and replacing spaces or special-character groups with a hyphen. Set isNewCompany to true and provide companyName when the company does not exist; otherwise set it to false and provide companyId. Use isNewCategory, categoryName, and categoryId in the same way for the category.",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "function slugifyName(value) {",
+                      "  return String(value || '')",
+                      "    .normalize('NFKD')",
+                      "    .replace(/[\\u0300-\\u036f]/g, '')",
+                      "    .trim()",
+                      "    .toLowerCase()",
+                      "    .replace(/[^a-z0-9]+/g, '-')",
+                      "    .replace(/^-+|-+$/g, '')",
+                      "    .slice(0, 128)",
+                      "    .replace(/-+$/g, '');",
+                      "}",
+                      "",
+                      "const input = JSON.parse(pm.variables.replaceIn(pm.request.body.raw));",
+                      "const productId = slugifyName(input.name);",
+                      "if (!productId) throw new Error('Product name must contain at least one letter or number');",
+                      "pm.collectionVariables.set('admin_new_product_id', productId);"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('new product is created', function () {",
+                      "  pm.response.to.have.status(201);",
+                      "});",
+                      "const json = pm.response.json();",
+                      "pm.test('response confirms success', function () {",
+                      "  pm.expect(json.ok).to.eql(true);",
+                      "});",
+                      "pm.test('created product id matches', function () {",
+                      "  pm.expect(json.productId).to.eql(pm.collectionVariables.get('admin_new_product_id'));",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/products",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"productId\": \"{{admin_new_product_id}}\",\n  \"name\": \"Postman Product Fully Updated\",\n  \"sku\": \"PM-OOS-UPDATED\",\n  \"modelNumber\": \"PM-MODEL-UPDATED\",\n  \"isNewCompany\": false,\n  \"companyName\": \"\",\n  \"companyId\": \"{{admin_product_company_id}}\",\n  \"isNewCategory\": false,\n  \"categoryName\": \"\",\n  \"categoryId\": \"{{admin_product_category_id}}\",\n  \"price\": 1499.5,\n  \"currency\": \"INR\",\n  \"discountPercentage\": 12.5,\n  \"inStock\": false,\n  \"stockQuantity\": 0,\n  \"active\": true,\n  \"shortDescription\": \"Updated short product description.\",\n  \"description\": \"Updated name, price, discount, inventory, descriptions, and all product specifications.\",\n  \"specifications\": {\n    \"voltage\": \"415 V\",\n    \"poles\": 4,\n    \"ratedCurrent\": \"32 A\",\n    \"certified\": true,\n    \"warrantyYears\": 2\n  }\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Add Out-Of-Stock Product",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('out-of-stock product is created', function () {",
+                      "  pm.response.to.have.status(201);",
+                      "});",
+                      "const json = pm.response.json();",
+                      "pm.test('response confirms success', function () {",
+                      "  pm.expect(json.ok).to.eql(true);",
+                      "});",
+                      "pm.test('created product id matches', function () {",
+                      "  pm.expect(json.productId).to.eql(pm.collectionVariables.get('admin_out_of_stock_product_id'));",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/products",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"productId\": \"{{admin_out_of_stock_product_id}}\",\n  \"name\": \"Postman Out-of-Stock Product\",\n  \"sku\": \"PM-OOS-001\",\n  \"modelNumber\": \"PM-OOS-MODEL\",\n  \"companyId\": \"{{admin_product_company_id}}\",\n  \"categoryId\": \"{{admin_product_category_id}}\",\n  \"price\": 1250,\n  \"currency\": \"INR\",\n  \"discountPercentage\": 5,\n  \"inStock\": false,\n  \"stockQuantity\": 0,\n  \"active\": true,\n  \"shortDescription\": \"Created by the Product Admin CRUD Postman flow.\",\n  \"description\": \"Temporary product used to test full updates and conditional out-of-stock deletion.\",\n  \"specifications\": {\n    \"voltage\": \"230 V\",\n    \"poles\": 3,\n    \"certified\": true\n  }\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Update All Product Information",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('all product information is updated', function () {",
+                      "  pm.response.to.have.status(200);",
+                      "});",
+                      "const json = pm.response.json();",
+                      "pm.test('response confirms success', function () {",
+                      "  pm.expect(json.ok).to.eql(true);",
+                      "});",
+                      "pm.test('response lists updated fields', function () {",
+                      "  pm.expect(json.updatedFields).to.include.members(['name', 'price', 'discountPercentage', 'specifications']);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/products/{{admin_out_of_stock_product_id}}",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Postman Product Fully Updated\",\n  \"sku\": \"PM-OOS-UPDATED\",\n  \"modelNumber\": \"PM-MODEL-UPDATED\",\n  \"price\": 1499.5,\n  \"currency\": \"INR\",\n  \"discountPercentage\": 12.5,\n  \"inStock\": false,\n  \"stockQuantity\": 0,\n  \"active\": true,\n  \"shortDescription\": \"Updated short product description.\",\n  \"description\": \"Updated name, price, discount, inventory, descriptions, and all product specifications.\",\n  \"specifications\": {\n    \"voltage\": \"415 V\",\n    \"poles\": 4,\n    \"ratedCurrent\": \"32 A\",\n    \"certified\": true,\n    \"warrantyYears\": 2\n  }\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Verify Updated Product",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('updated product is publicly readable', function () {",
+                      "  pm.response.to.have.status(200);",
+                      "});",
+                      "const json = pm.response.json();",
+                      "pm.test('updated values were persisted', function () {",
+                      "  pm.expect(json.name).to.eql('Postman Product Fully Updated');",
+                      "  pm.expect(json.price).to.eql(1499.5);",
+                      "  pm.expect(json.discountPercentage).to.eql(12.5);",
+                      "  pm.expect(json.specifications.ratedCurrent).to.eql('32 A');",
+                      "  pm.expect(json.inStock).to.eql(false);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{base_url}}/api/products/{{admin_out_of_stock_product_id}}"
+              }
+            },
+            {
+              "name": "Update Company Name",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('company name is updated', function () {",
+                      "  pm.response.to.have.status(200);",
+                      "});",
+                      "const json = pm.response.json();",
+                      "pm.test('response confirms success', function () {",
+                      "  pm.expect(json.ok).to.eql(true);",
+                      "});",
+                      "pm.test('renamed company is returned', function () {",
+                      "  pm.expect(json.company.name).to.eql('Postman Product Company Renamed');",
+                      "  pm.expect(json.updatedProducts).to.be.at.least(1);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/companies/{{admin_product_company_id}}",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Postman Product Company Renamed\",\n  \"slug\": \"postman-product-company-renamed\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Update Category Name",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('category name is updated', function () {",
+                      "  pm.response.to.have.status(200);",
+                      "});",
+                      "const json = pm.response.json();",
+                      "pm.test('response confirms success', function () {",
+                      "  pm.expect(json.ok).to.eql(true);",
+                      "});",
+                      "pm.test('renamed category is returned', function () {",
+                      "  pm.expect(json.category.name).to.eql('Postman Product Category Renamed');",
+                      "  pm.expect(json.updatedProducts).to.be.at.least(1);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/categories/{{admin_product_category_id}}",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Postman Product Category Renamed\",\n  \"slug\": \"postman-product-category-renamed\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Delete Company With Product - Conflict",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('referenced company cannot be deleted', function () {",
+                      "  pm.response.to.have.status(409);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/companies/{{admin_product_company_id}}"
+              }
+            },
+            {
+              "name": "Delete Category With Product - Conflict",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('referenced category cannot be deleted', function () {",
+                      "  pm.response.to.have.status(409);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/categories/{{admin_product_category_id}}"
+              }
+            },
+            {
+              "name": "Delete Particular Out-Of-Stock Product",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('named out-of-stock product is deleted', function () {",
+                      "  pm.response.to.have.status(200);",
+                      "});",
+                      "const json = pm.response.json();",
+                      "pm.test('response confirms success', function () {",
+                      "  pm.expect(json.ok).to.eql(true);",
+                      "});",
+                      "pm.test('deleted product id matches', function () {",
+                      "  pm.expect(json.deletedProductId).to.eql(pm.collectionVariables.get('admin_out_of_stock_product_id'));",
+                      "});",
+                      "pm.test('relationships remain while other products exist', function () {",
+                      "  pm.expect(json.deletedCompanyId).to.eql(null);",
+                      "  pm.expect(json.deletedCategoryId).to.eql(null);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/products/out-of-stock/{{admin_out_of_stock_product_id}}"
+              }
+            },
+            {
+              "name": "Add Product For Particular Delete",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('product for direct deletion is created', function () {",
+                      "  pm.response.to.have.status(201);",
+                      "});",
+                      "const json = pm.response.json();",
+                      "pm.test('response confirms success', function () {",
+                      "  pm.expect(json.ok).to.eql(true);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/products",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"productId\": \"{{admin_product_id}}\",\n  \"name\": \"Postman Product For Delete\",\n  \"sku\": \"PM-DELETE-001\",\n  \"companyId\": \"{{admin_product_company_id}}\",\n  \"categoryId\": \"{{admin_product_category_id}}\",\n  \"price\": 999,\n  \"currency\": \"INR\",\n  \"discountPercentage\": 0,\n  \"inStock\": true,\n  \"stockQuantity\": 10,\n  \"active\": true,\n  \"specifications\": {\n    \"purpose\": \"particular product delete API test\"\n  }\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Delete Particular Product",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('particular product is deleted', function () {",
+                      "  pm.response.to.have.status(200);",
+                      "});",
+                      "const json = pm.response.json();",
+                      "pm.test('response confirms success', function () {",
+                      "  pm.expect(json.ok).to.eql(true);",
+                      "});",
+                      "pm.test('deleted product id matches', function () {",
+                      "  pm.expect(json.deletedProductId).to.eql(pm.collectionVariables.get('admin_product_id'));",
+                      "});",
+                      "pm.test('relationships remain while another product exists', function () {",
+                      "  pm.expect(json.deletedCompanyId).to.eql(null);",
+                      "  pm.expect(json.deletedCategoryId).to.eql(null);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/products/{{admin_product_id}}"
+              }
+            },
+            {
+              "name": "Delete New Product During CRUD Cleanup",
+              "description": "Collection-runner cleanup for Add New Product. Do not send this request when you want the newly added product to remain on the product page.",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('new product is deleted during cleanup', function () {",
+                      "  pm.response.to.have.status(200);",
+                      "});",
+                      "const json = pm.response.json();",
+                      "pm.test('deleted product id matches', function () {",
+                      "  pm.expect(json.deletedProductId).to.eql(pm.collectionVariables.get('admin_new_product_id'));",
+                      "});",
+                      "pm.test('last product deletion removes empty relationships', function () {",
+                      "  pm.expect(json.deletedCompanyId).to.eql(pm.collectionVariables.get('admin_product_company_id'));",
+                      "  pm.expect(json.deletedCategoryId).to.eql(pm.collectionVariables.get('admin_product_category_id'));",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/products/{{admin_new_product_id}}"
+              }
+            },
+            {
+              "name": "Verify Product Category Was Auto-Deleted",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('empty category was already auto-deleted', function () {",
+                      "  pm.response.to.have.status(404);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/categories/{{admin_product_category_id}}"
+              }
+            },
+            {
+              "name": "Verify Product Company Was Auto-Deleted",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('empty company was already auto-deleted', function () {",
+                      "  pm.response.to.have.status(404);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/companies/{{admin_product_company_id}}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "OpenAPI Generated Coverage",
+      "description": "Requests generated only for OpenAPI operations that are not represented in the hand-maintained folders. Run npm run api:artifacts after route changes.",
+      "item": [
+        {
+          "name": "Business Authentication",
+          "item": [
+            {
+              "name": "Get the current business session",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/auth/me",
+                "description": "Generated from OpenAPI operation BusinessAuth_getCurrentUser. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "Log out of the business session",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/auth/logout",
+                "description": "Generated from OpenAPI operation BusinessAuth_logout. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            }
+          ]
+        },
+        {
+          "name": "Business Catalog",
+          "item": [
+            {
+              "name": "Get catalog data for business administration",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/catalog/all",
+                "description": "Generated from OpenAPI operation BusinessCatalog_getCatalogAll. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "Upload a catalog PDF document",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/catalog/documents",
+                "description": "Generated from OpenAPI operation BusinessCatalog_createDocument. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "company_name",
+                      "value": "<company_name>",
+                      "type": "text"
+                    },
+                    {
+                      "key": "category_name",
+                      "value": "<category_name>",
+                      "type": "text",
+                      "disabled": true
+                    },
+                    {
+                      "key": "document_name",
+                      "value": "<document_name>",
+                      "type": "text"
+                    },
+                    {
+                      "key": "file",
+                      "type": "file",
+                      "src": []
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Create an administrative signed document URL",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/catalog/documents/access",
+                "description": "Generated from OpenAPI operation BusinessCatalog_createDocumentAccess. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"company_slug\": \"<company_slug>\",\n  \"category_slug\": \"<category_slug>\",\n  \"document_slug\": \"<document_slug>\",\n  \"action\": \"preview\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Update or replace a catalog PDF document",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/catalog/documents/{{document_id}}",
+                "description": "Generated from OpenAPI operation BusinessCatalog_updateDocument. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "document_name",
+                      "value": "<document_name>",
+                      "type": "text",
+                      "disabled": true
+                    },
+                    {
+                      "key": "category_name",
+                      "value": "<category_name>",
+                      "type": "text",
+                      "disabled": true
+                    },
+                    {
+                      "key": "file",
+                      "type": "file",
+                      "src": [],
+                      "disabled": true
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Delete a catalog document",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/catalog/documents/{{document_id}}",
+                "description": "Generated from OpenAPI operation BusinessCatalog_deleteDocument. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "Rename or merge a catalog company",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/catalog/companies/{{company_slug}}",
+                "description": "Generated from OpenAPI operation BusinessCatalog_updateCompany. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"company_name\": \"<company_name>\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Business Inventory",
+          "item": [
+            {
+              "name": "List inventory for active products",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/inventory",
+                "description": "Generated from OpenAPI operation BusinessInventory_getInventory. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "List low-stock and out-of-stock products",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/inventory/low-stock",
+                "description": "Generated from OpenAPI operation BusinessInventory_getLowStock. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "List immutable stock movement history",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/inventory/movements",
+                "description": "Generated from OpenAPI operation BusinessInventory_getMovements. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "Get inventory for one product",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/inventory/{{productId}}",
+                "description": "Generated from OpenAPI operation BusinessInventory_getProductInventory. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "Receive purchased stock",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/inventory/receipts",
+                "description": "Generated from OpenAPI operation BusinessInventory_receive. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"productId\": \"<productId>\",\n  \"quantity\": 0,\n  \"referenceId\": \"PO-2026-0042\",\n  \"notes\": \"<notes>\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Adjust stock with a mandatory reason",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/inventory/{{productId}}/adjustments",
+                "description": "Generated from OpenAPI operation BusinessInventory_adjust. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"quantityDelta\": -2,\n  \"type\": \"DAMAGE\",\n  \"reason\": \"<reason>\",\n  \"notes\": \"<notes>\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Reconcile stock to a physical count",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/inventory/{{productId}}/stock-counts",
+                "description": "Generated from OpenAPI operation BusinessInventory_count. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"countedQuantity\": 0,\n  \"reason\": \"<reason>\",\n  \"notes\": \"<notes>\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Set the product reorder level",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/inventory/{{productId}}/settings",
+                "description": "Generated from OpenAPI operation BusinessInventory_updateSettings. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"reorderLevel\": 0\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Business Messages",
+          "item": [
+            {
+              "name": "List contact messages",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/messages",
+                "description": "Generated from OpenAPI operation BusinessMessage_getMessages. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "Delete a contact message",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/messages/{{message_id}}",
+                "description": "Generated from OpenAPI operation BusinessMessage_deleteMessage. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            }
+          ]
+        },
+        {
+          "name": "Business Orders",
+          "item": [
+            {
+              "name": "List placed customer orders newest first",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/orders",
+                "description": "Generated from OpenAPI operation BusinessOrder_getOrders. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "Confirm an order and reserve available stock",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/orders/{{orderId}}/confirm",
+                "description": "Generated from OpenAPI operation BusinessOrder_confirm. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "Dispatch an order and consume its reserved stock",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/orders/{{orderId}}/dispatch",
+                "description": "Generated from OpenAPI operation BusinessOrder_dispatch. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "Cancel an order and release any reservation",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/orders/{{orderId}}/cancel",
+                "description": "Generated from OpenAPI operation BusinessOrder_cancel. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "Return all order items to sellable stock",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/orders/{{orderId}}/return",
+                "description": "Generated from OpenAPI operation BusinessOrder_returnOrder. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            }
+          ]
+        },
+        {
+          "name": "Business Products",
+          "item": [
+            {
+              "name": "Create a product and upload its assets",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/products/upload",
+                "description": "Generated from OpenAPI operation BusinessProduct_createProductUpload. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "product",
+                      "value": "<product>",
+                      "type": "text"
+                    },
+                    {
+                      "key": "main_image",
+                      "type": "file",
+                      "src": []
+                    },
+                    {
+                      "key": "additional_images",
+                      "value": "",
+                      "type": "text",
+                      "disabled": true
+                    },
+                    {
+                      "key": "brochure",
+                      "type": "file",
+                      "src": [],
+                      "disabled": true
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Edit one product specification",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/products/{{productId}}/specifications/{{key}}",
+                "description": "Generated from OpenAPI operation BusinessProduct_updateProductSpecification. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"key\": \"<key>\",\n  \"value\": \"<value>\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Delete one product specification",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/products/{{productId}}/specifications/{{key}}",
+                "description": "Generated from OpenAPI operation BusinessProduct_deleteProductSpecification. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "Update a product and upload replacement assets",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/products/{{productId}}/upload",
+                "description": "Generated from OpenAPI operation BusinessProduct_updateProductUpload. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "product",
+                      "value": "<product>",
+                      "type": "text"
+                    },
+                    {
+                      "key": "main_image",
+                      "type": "file",
+                      "src": [],
+                      "disabled": true
+                    },
+                    {
+                      "key": "additional_images",
+                      "value": "",
+                      "type": "text",
+                      "disabled": true
+                    },
+                    {
+                      "key": "brochure",
+                      "type": "file",
+                      "src": [],
+                      "disabled": true
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Replace the main image and regenerate its WebP thumbnail",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/products/{{productId}}/main-image",
+                "description": "Generated from OpenAPI operation BusinessProduct_replaceMainImage. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "image",
+                      "type": "file",
+                      "src": []
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Delete the main image and generated thumbnail",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/products/{{productId}}/main-image",
+                "description": "Generated from OpenAPI operation BusinessProduct_deleteMainImage. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "Append one additional image (maximum 20)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/products/{{productId}}/additional-images",
+                "description": "Generated from OpenAPI operation BusinessProduct_addAdditionalImage. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "image",
+                      "type": "file",
+                      "src": []
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Replace one additional image by its zero-based index",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/products/{{productId}}/additional-images/{{index}}",
+                "description": "Generated from OpenAPI operation BusinessProduct_replaceAdditionalImage. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "image",
+                      "type": "file",
+                      "src": []
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Delete one additional image by its zero-based index",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/products/{{productId}}/additional-images/{{index}}",
+                "description": "Generated from OpenAPI operation BusinessProduct_deleteAdditionalImage. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            }
+          ]
+        },
+        {
+          "name": "Business Quotations",
+          "item": [
+            {
+              "name": "List quotation requests newest first",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/quotation-requests",
+                "description": "Generated from OpenAPI operation BusinessQuotation_getQuotations. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "Get one quotation request",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/quotation-requests/{{quotationId}}",
+                "description": "Generated from OpenAPI operation BusinessQuotation_getQuotation. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "Update quotation workflow status",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{business_csrf_token}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/quotation-requests/{{quotationId}}/status",
+                "description": "Generated from OpenAPI operation BusinessQuotation_updateStatus. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"new\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Business Users",
+          "item": [
+            {
+              "name": "List catalog users by latest login",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/business/users",
+                "description": "Generated from OpenAPI operation BusinessUser_getUsers. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            }
+          ]
+        },
+        {
+          "name": "Catalog",
+          "item": [
+            {
+              "name": "Create catalog access from a Firebase email link",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{base_url}}/api/catalog/access/firebase/email-link",
+                "description": "Generated from OpenAPI operation Catalog_createFirebaseEmailAccess. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"id_token\": \"<id_token>\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Handle Google catalog access redirect",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/catalog/access/google/redirect",
+                "description": "Generated from OpenAPI operation Catalog_createGoogleRedirectAccess. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "Restore the current catalog access session",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/catalog/access/me",
+                "description": "Generated from OpenAPI operation Catalog_restoreAccessSession. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "Request a catalog access OTP",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{base_url}}/api/catalog/access/otp/request",
+                "description": "Generated from OpenAPI operation Catalog_requestAccessOtp. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"identifier\": \"<identifier>\",\n  \"captcha_token\": \"<captcha_token>\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Verify a catalog access OTP",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{base_url}}/api/catalog/access/otp/verify",
+                "description": "Generated from OpenAPI operation Catalog_verifyAccessOtp. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"challenge_id\": \"<challenge_id>\",\n  \"code\": \"<code>\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Resend a catalog access OTP",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{base_url}}/api/catalog/access/otp/resend",
+                "description": "Generated from OpenAPI operation Catalog_resendAccessOtp. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"challenge_id\": \"<challenge_id>\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Log out of catalog access",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{frontend_origin}}"
+                  }
+                ],
+                "url": "{{base_url}}/api/catalog/access/logout",
+                "description": "Generated from OpenAPI operation Catalog_logoutAccess. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            }
+          ]
+        },
+        {
+          "name": "Customer Cart",
+          "item": [
+            {
+              "name": "Get the authenticated customer's cart",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{base_url}}/api/cart",
+                "description": "Generated from OpenAPI operation Cart_getCart. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "Clear the authenticated customer's cart",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": "{{base_url}}/api/cart",
+                "description": "Generated from OpenAPI operation Cart_clearCart. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "Set the absolute quantity of one cart product",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{base_url}}/api/cart/items/{{productId}}",
+                "description": "Generated from OpenAPI operation Cart_setItem. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"quantity\": 2\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Remove one product from the cart",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": "{{base_url}}/api/cart/items/{{productId}}",
+                "description": "Generated from OpenAPI operation Cart_removeItem. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "Merge a pre-login anonymous cart into the customer cart",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{base_url}}/api/cart/merge",
+                "description": "Generated from OpenAPI operation Cart_mergeCart. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"strategy\": \"maximum_quantity\",\n  \"items\": []\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Customer Orders",
+          "item": [
+            {
+              "name": "List the authenticated customer's orders",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{base_url}}/api/orders",
+                "description": "Generated from OpenAPI operation Order_getOrders. Add workflow-specific examples and tests here or move the request into a maintained feature folder."
+              }
+            },
+            {
+              "name": "Place the authenticated customer's order",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{base_url}}/api/orders",
+                "description": "Generated from OpenAPI operation Order_createOrder. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"orderRequestId\": \"<orderRequestId>\",\n  \"email\": \"customer@example.com\",\n  \"billingAddress\": {\n    \"firstName\": \"Ankita\",\n    \"lastName\": \"Patel\",\n    \"company\": \"<company>\",\n    \"gstNumber\": \"27ABCDE1234F1Z5\",\n    \"addressLine1\": \"<addressLine1>\",\n    \"addressLine2\": \"<addressLine2>\",\n    \"city\": \"<city>\",\n    \"state\": \"<state>\",\n    \"postcode\": \"411001\",\n    \"phone\": \"9876543210\"\n  },\n  \"shippingAddress\": {\n    \"firstName\": \"Ankita\",\n    \"lastName\": \"Patel\",\n    \"company\": \"<company>\",\n    \"gstNumber\": \"27ABCDE1234F1Z5\",\n    \"addressLine1\": \"<addressLine1>\",\n    \"addressLine2\": \"<addressLine2>\",\n    \"city\": \"<city>\",\n    \"state\": \"<state>\",\n    \"postcode\": \"411001\",\n    \"phone\": \"9876543210\"\n  },\n  \"notes\": \"<notes>\",\n  \"termsAccepted\": true\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Quotations",
+          "item": [
+            {
+              "name": "Validate cart products, quantities, availability, and current totals",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{base_url}}/api/products/cart-validation",
+                "description": "Generated from OpenAPI operation Quotation_validateCart. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"items\": []\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Create a quotation request from an authoritative cart snapshot",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{base_url}}/api/quotation-requests",
+                "description": "Generated from OpenAPI operation Quotation_createQuotation. Add workflow-specific examples and tests here or move the request into a maintained feature folder.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"items\": [],\n  \"captcha_token\": \"<captcha_token>\",\n  \"customer\": {\n    \"name\": \"<name>\",\n    \"company\": \"<company>\",\n    \"email\": \"user@example.com\",\n    \"mobile\": \"<mobile>\",\n    \"deliveryLocation\": \"<deliveryLocation>\"\n  },\n  \"notes\": \"<notes>\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            }
+          ]
         }
       ]
     }

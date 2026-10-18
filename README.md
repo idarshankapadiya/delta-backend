@@ -42,6 +42,17 @@ Local development:
 npm run start-backend:dev
 ```
 
+To call `/api/business/**` locally without Google sign-in, add this to the
+ignored local `.env` file and restart the backend:
+
+```dotenv
+BUSINESS_AUTH_BYPASS_FOR_LOCAL=true
+```
+
+This also bypasses business CSRF checks so Postman or curl can call write
+endpoints directly. The bypass is always disabled when `NODE_ENV=production`,
+even if the variable is accidentally present.
+
 Tests:
 
 ```bash
@@ -53,6 +64,73 @@ npm run build
 
 Use `npm run lint:fix` to apply ESLint fixes. The regular `lint` command is
 read-only and is safe to use as a validation check.
+
+## Customer carts
+
+Authenticated carts are stored below each `catalog_customers` document in the
+`cart_items` subcollection. Cart ownership always comes from the verified
+`catalog_access` session; `X-Expected-Customer-Id` is only a stale-session
+guard and never selects another customer's cart. The API validates products
+against the product catalog and returns current product snapshots instead of
+trusting browser-supplied prices.
+
+Set `CART_STORE=memory` for local development without cart persistence. Tests
+use the memory store automatically. Production carts require
+`FIRESTORE_DATABASE_ID`.
+
+## Product discount policy
+
+Set the same flag in the backend `.env` and the storefront `.env.local`:
+
+```dotenv
+VITE_DISCOUNTS_ENABLED=false
+```
+
+`false` disables discounts for cart-validation totals, new quotations, and new
+orders. Product totals use original price × quantity; saved line items record
+an applied discount of zero. Order shipping is added separately. `true` or an
+unset variable keeps catalog discounts enabled, matching the storefront default.
+
+The backend reads its own environment independently of Vite. Restart the backend
+and frontend development servers after changing their environment files. For
+production, set the same value in the backend service environment and the
+frontend build environment, then rebuild the frontend. Changing the frontend
+variable alone does not configure the backend. Prices and discount policy are
+always determined on the server, never from request fields.
+
+Catalog discounts remain stored so they can be enabled again. Existing orders,
+quotation snapshots, and idempotent order retries retain their saved prices.
+
+## Customer orders
+
+`POST /api/orders` snapshots the authenticated customer's validated cart into
+the `customer_orders` collection, records payment as pending, and clears the
+cart after the order is saved. Orders use the Firestore database
+`client-orders-db` by default; set `ORDER_FIRESTORE_DATABASE_ID` only when a
+different database is required. The database must already exist and the
+backend runtime service account must have Firestore write access.
+
+The client supplies a UUID `orderRequestId`, which is used as the document ID
+so retrying a checkout request does not create a duplicate order.
+
+## Quotation requests
+
+Public cart validation and quotation submission use the product database and
+store immutable commercial snapshots in the `quotation_requests` Firestore
+collection. `QUOTATION_FIRESTORE_DATABASE_ID` can select a dedicated database;
+otherwise `FIRESTORE_DATABASE_ID` is used.
+
+Sales email notification is optional. Configure both variables to enable it:
+
+```dotenv
+QUOTATION_NOTIFICATION_EMAIL_TO=sales@example.com
+QUOTATION_EMAIL_FROM=website@example.com
+```
+
+Set `QUOTATION_SEND_CUSTOMER_ACKNOWLEDGEMENT=true` to also email the customer.
+The configured AWS region and SES credentials are shared with the existing SES
+integration. A notification failure is logged but does not discard a quotation
+that was already saved.
 
 ## Deployment commands
 
@@ -108,7 +186,34 @@ It:
 - restricts ingress to internal and external load-balancer traffic;
 - disables the default `run.app` URL;
 - keeps the maximum instance count at one while public catalog sessions remain
-  process-local.
+  constrained by other process-local catalog limits. Customer accounts, OTP
+  challenges, and catalog sessions are persisted in Firestore.
+
+### Customer passwordless sign-in
+
+Email sign-in uses Firebase Authentication email links. The frontend completes
+the Firebase flow and sends its ID token to the backend, which verifies it with
+Firebase Admin before creating the `catalog_access` session. Enable
+**Email/Password** and **Email link (passwordless sign-in)** in Firebase
+Authentication, and authorize `darshanent.co.in`, `www.darshanent.co.in`, and
+the local development domain when needed.
+
+Mobile sign-in continues to use Twilio Verify SMS. Create these Secret Manager
+secrets and grant the backend runtime service access before running the
+user-service deployment manually:
+
+```text
+TWILIO_ACCOUNT_SID
+TWILIO_AUTH_TOKEN
+TWILIO_VERIFY_SERVICE_SID
+```
+
+The deployment script maps the SMS secrets and configures a 10-minute code,
+60-second resend cooldown, five verification attempts, Firebase ID-token
+verification, Firestore-backed customers/sessions/challenges, and reCAPTCHA Enterprise action
+`catalog_otp_request`. In local development, set
+`CATALOG_OTP_DELIVERY_ENABLED=true`; when `CATALOG_OTP_PROVIDER` is not
+`twilio`, generated codes are written to the backend development log only.
 
 Required shell variables:
 
@@ -185,13 +290,13 @@ As verified on 19 July 2026:
 
 ## Which deployment command should I run?
 
-| Change                                                            | Command                                                  |
-| ----------------------------------------------------------------- | -------------------------------------------------------- |
-| Public routes, business authentication, business catalog/messages | `npm run deploy:gcp:user`                                |
-| Internal Postman/operator routes only                             | `npm run deploy:gcp:admin`                               |
-| Shared services, dependencies, DTOs, catalog or message logic     | `npm run deploy:gcp`                                     |
-| Documentation/frontend-only change                                | Neither backend command                                  |
-| First production setup                                            | Complete the infrastructure runbook, then `deploy:gcp`   |
+| Change                                                            | Command                                                |
+| ----------------------------------------------------------------- | ------------------------------------------------------ |
+| Public routes, business authentication, business catalog/messages | `npm run deploy:gcp:user`                              |
+| Internal Postman/operator routes only                             | `npm run deploy:gcp:admin`                             |
+| Shared services, dependencies, DTOs, catalog or message logic     | `npm run deploy:gcp`                                   |
+| Documentation/frontend-only change                                | Neither backend command                                |
+| First production setup                                            | Complete the infrastructure runbook, then `deploy:gcp` |
 
 Deployments are independent. Updating `delta-backend` does not update
 `delta-backend-admin`, even though both use the same repository. The combined

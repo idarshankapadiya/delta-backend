@@ -33,6 +33,73 @@ export class AppService {
           auth: 'none',
         },
         {
+          method: 'GET',
+          path: '/api/docs',
+          description:
+            'Open Swagger UI. Raw definitions are available at /api/docs/openapi.json and /api/docs/openapi.yaml.',
+          auth: 'none',
+        },
+        {
+          method: 'GET',
+          path: '/api/companies',
+          description: 'Return active product companies.',
+          auth: 'none',
+        },
+        {
+          method: 'GET',
+          path: '/api/categories',
+          description:
+            'Return active product categories, optionally by company.',
+          auth: 'none',
+        },
+        {
+          method: 'GET',
+          path: '/api/products',
+          description: 'Return a filtered, cursor-paginated product listing.',
+          auth: 'none',
+        },
+        {
+          method: 'GET',
+          path: '/api/products/:productId',
+          description: 'Return one active product with detail asset URLs.',
+          auth: 'none',
+        },
+        {
+          method: 'POST',
+          path: '/api/products/cart-validation',
+          description:
+            'Validate cart products, requested quantities, current prices, and availability.',
+          auth: 'public-site origin',
+        },
+        {
+          method: 'GET/DELETE',
+          path: '/api/cart',
+          description:
+            "Return or clear the authenticated customer's persisted cart.",
+          auth: 'catalog_access HttpOnly cookie',
+        },
+        {
+          method: 'PUT/DELETE',
+          path: '/api/cart/items/:productId',
+          description:
+            "Set a product quantity or remove it from the authenticated customer's cart.",
+          auth: 'catalog_access HttpOnly cookie',
+        },
+        {
+          method: 'POST',
+          path: '/api/cart/merge',
+          description:
+            'Idempotently merge an anonymous cart into the authenticated customer cart.',
+          auth: 'catalog_access HttpOnly cookie',
+        },
+        {
+          method: 'POST',
+          path: '/api/quotation-requests',
+          description:
+            'Revalidate a cart and create a structured quotation request.',
+          auth: 'public-site origin, reCAPTCHA Enterprise, and rate limits',
+        },
+        {
           method: 'POST',
           path: '/api/message',
           description: 'Create a contact form message in Firestore.',
@@ -64,6 +131,25 @@ export class AppService {
           auth: 'business session',
         },
         {
+          method: 'DELETE',
+          path: '/api/business/messages/:message_id',
+          description: 'Delete one contact message.',
+          auth: 'business session and X-CSRF-Token',
+        },
+        {
+          method: 'GET/PATCH',
+          path: '/api/business/quotation-requests/**',
+          description:
+            'Review quotation requests and update their workflow status.',
+          auth: 'business session; status updates also require X-CSRF-Token',
+        },
+        {
+          method: 'GET',
+          path: '/api/business/orders',
+          description: 'Return placed customer orders newest first.',
+          auth: 'business session',
+        },
+        {
           method: 'GET',
           path: '/api/business/catalog/all',
           description: 'Return the catalog for dashboard administration.',
@@ -73,6 +159,51 @@ export class AppService {
           method: 'POST/PUT/DELETE',
           path: '/api/business/catalog/**',
           description: 'Create, update, rename, or delete catalog content.',
+          auth: 'business session and X-CSRF-Token',
+        },
+        {
+          method: 'POST',
+          path: '/api/business/products',
+          description: 'Create a product in Firestore.',
+          auth: 'business session and X-CSRF-Token',
+        },
+        {
+          method: 'PUT/DELETE',
+          path: '/api/business/products/:productId',
+          description:
+            'Update a particular product or permanently delete it and its complete storage prefixes.',
+          auth: 'business session and X-CSRF-Token',
+        },
+        {
+          method: 'DELETE',
+          path: '/api/business/products/out-of-stock/:productId',
+          description:
+            'Delete a particular product only when it is out of stock.',
+          auth: 'business session and X-CSRF-Token',
+        },
+        {
+          method: 'POST',
+          path: '/api/business/companies',
+          description: 'Create a product company.',
+          auth: 'business session and X-CSRF-Token',
+        },
+        {
+          method: 'PUT/DELETE',
+          path: '/api/business/companies/:companyId',
+          description:
+            'Update a product company or safely delete it and its storage prefixes when unused.',
+          auth: 'business session and X-CSRF-Token',
+        },
+        {
+          method: 'POST',
+          path: '/api/business/categories',
+          description: 'Create a product category.',
+          auth: 'business session and X-CSRF-Token',
+        },
+        {
+          method: 'PUT/DELETE',
+          path: '/api/business/categories/:categoryId',
+          description: 'Update or safely delete a product category.',
           auth: 'business session and X-CSRF-Token',
         },
         {
@@ -108,6 +239,13 @@ export class AppService {
           auth: 'Google Identity Services credential form post',
         },
         {
+          method: 'POST',
+          path: '/api/catalog/access/firebase/email-link',
+          description:
+            'Verify a Firebase email-link ID token and set catalog_access.',
+          auth: 'allowed browser origin for browser requests',
+        },
+        {
           method: 'GET',
           path: '/api/catalog/access/me',
           description:
@@ -116,15 +254,29 @@ export class AppService {
         },
         {
           method: 'POST',
-          path: '/api/catalog/access/request-otp',
+          path: '/api/catalog/access/me',
           description:
-            'Create an OTP challenge and deliver a one-time verification code.',
+            'Restore the current catalog access session with a browser Origin header.',
+          auth: 'allowed public Origin and catalog_access HttpOnly cookie',
+        },
+        {
+          method: 'POST',
+          path: '/api/catalog/access/otp/request',
+          description:
+            'Create an email or SMS OTP challenge for an identifier.',
           auth: 'allowed browser origin for browser requests',
         },
         {
           method: 'POST',
-          path: '/api/catalog/access/verify-otp',
-          description: 'Verify an OTP challenge and set catalog_access.',
+          path: '/api/catalog/access/otp/verify',
+          description:
+            'Verify an OTP, create or update the customer, and set catalog_access.',
+          auth: 'allowed browser origin for browser requests',
+        },
+        {
+          method: 'POST',
+          path: '/api/catalog/access/otp/resend',
+          description: 'Resend an active OTP challenge after its cooldown.',
           auth: 'allowed browser origin for browser requests',
         },
         {
